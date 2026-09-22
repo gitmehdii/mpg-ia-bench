@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mpg.api.security import hash_password
-from mpg.config import MERCATO_BUDGET
+from mpg.config import FIRST_ROUND_HOURS, MERCATO_BUDGET
 from mpg.db.models import (
     BonusUsage,
     Championship,
@@ -23,6 +23,7 @@ from mpg.db.models import (
     Lineup,
     LineupSlot,
     Match,
+    MercatoRound,
     Participant,
     Performance,
     Player,
@@ -166,7 +167,49 @@ def seed(session: Session) -> dict:
             _build_league(session, code, name, now, alice, away_user, away_name,
                           away_squad, bonuses)
         )
+
+    # A third league left open in its mercato, so the bidding screens have something
+    # to do. Ownership is per league, so every player is free again here.
+    open_league = session.execute(
+        select(League).where(League.code == "DEMO03")
+    ).scalar_one_or_none()
+    if open_league is None:
+        open_league = _build_open_mercato(session, now, alice, bob)
+    built.append(open_league)
+
     return _summary(session, built)
+
+
+def _build_open_mercato(session, now, home_user, away_user) -> League:
+    """A league in its first bidding round, with nothing bought yet."""
+    league = League(
+        name="Démo — mercato ouvert", code="DEMO03", championship_id=1, size=2,
+        return_legs=True, status=LeagueStatus.MERCATO, created_by=home_user.id,
+        first_game_week=GAME_WEEK, mercato_opens_at=now,
+    )
+    session.add(league)
+    session.flush()
+
+    for user, team_name, admin in (
+        (home_user, "Les Recruteurs", True),
+        (away_user, "Les Concurrents", False),
+    ):
+        session.add(
+            Participant(
+                league_id=league.id, user_id=user.id, team_name=team_name,
+                budget=MERCATO_BUDGET, is_admin=admin,
+            )
+        )
+    session.flush()
+
+    session.add(
+        MercatoRound(
+            league_id=league.id, number=1, opens_at=now,
+            deadline_at=now + timedelta(hours=FIRST_ROUND_HOURS), seed=42,
+        )
+    )
+    session.flush()
+    return league
 
 
 def _build_league(session, code, name, now, home_user, away_user, away_name,

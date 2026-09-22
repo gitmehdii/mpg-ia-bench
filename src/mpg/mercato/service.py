@@ -120,11 +120,11 @@ def place_bid(
 ) -> Bid:
     """Record one closed bid, after the checks of spec 4.4.2."""
     if round_.resolved_at is not None:
-        raise BidRejected("this round is already resolved")
+        raise BidRejected("this round is already resolved", "round_resolved")
 
     player = session.get(Player, player_id)
     if player is None or player.quotation is None:
-        raise BidRejected("unknown player")
+        raise BidRejected("unknown player", "unknown_player")
 
     owned = owned_player_ids(session, participant.league_id)
     owner = None
@@ -177,7 +177,7 @@ def cancel_bid(
     session: Session, participant: Participant, round_: MercatoRound, player_id: str
 ) -> None:
     if round_.resolved_at is not None:
-        raise BidRejected("this round is already resolved")
+        raise BidRejected("this round is already resolved", "round_resolved")
     bid = session.execute(
         select(Bid).where(
             Bid.round_id == round_.id,
@@ -192,7 +192,7 @@ def cancel_bid(
 def validate_round(session: Session, participant: Participant, round_: MercatoRound) -> None:
     """Mark a participant as done for this round (spec 3.2)."""
     if round_.resolved_at is not None:
-        raise BidRejected("this round is already resolved")
+        raise BidRejected("this round is already resolved", "round_resolved")
     already = session.execute(
         select(RoundValidation).where(
             RoundValidation.round_id == round_.id,

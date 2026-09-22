@@ -150,11 +150,13 @@ def cmd_demo(args: argparse.Namespace) -> int:
     print(f"    bob@example.com    /  {info['password']}")
     print()
     for row in info["leagues"]:
-        if not row["fixture_id"]:
-            continue
-        home, away = row["score"]
-        print(f"    {row['name']}  —  {home} - {away}")
-        print(f"      {base}/ui/leagues/{row['league_id']}/matches/{row['fixture_id']}")
+        if row["fixture_id"]:
+            home, away = row["score"]
+            print(f"    {row['name']}  —  {home} - {away}")
+            print(f"      {base}/ui/leagues/{row['league_id']}/matches/{row['fixture_id']}")
+        else:
+            print(f"    {row['name']}")
+            print(f"      {base}/ui/leagues/{row['league_id']}/mercato")
     print()
     return 0
 

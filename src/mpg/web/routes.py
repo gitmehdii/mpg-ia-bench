@@ -411,7 +411,9 @@ def submit_bid_screen(
     try:
         place_bid(session, participant, round_, player_id, amount)
     except BidRejected as error:
-        return redirect(f"/ui/leagues/{league.id}/mercato?error={quote(str(error))}")
+        return redirect(
+            f"/ui/leagues/{league.id}/mercato?error={quote(fr.error_message(error))}"
+        )
     return redirect(f"/ui/leagues/{league.id}/mercato")
 
 

@@ -259,3 +259,33 @@ LEAGUE_STATUS_LABEL: dict[str, str] = {
 
 def status_label(status: object) -> str:
     return LEAGUE_STATUS_LABEL.get(str(status), str(status))
+
+
+#: Refusals worded for a player. The domain exceptions keep their English message for
+#: the JSON API; only the screens go through this.
+ERROR_MESSAGES: dict[str, str] = {
+    "already_bid": "Vous avez déjà une enchère sur ce joueur pour ce tour.",
+    "owned": "Ce joueur appartient déjà à un participant de la ligue.",
+    "below_quotation": (
+        "L’enchère minimale sur ce joueur est sa cote, {quotation} M€ "
+        "(vous avez proposé {amount} M€)."
+    ),
+    "over_budget": (
+        "La somme de vos enchères ne peut pas dépasser votre budget : "
+        "{others} + {amount} = {total} M€ pour {budget} M€ disponibles."
+    ),
+    "round_resolved": "Ce tour est déjà résolu.",
+    "unknown_player": "Ce joueur est introuvable.",
+}
+
+
+def error_message(error: Exception) -> str:
+    """The French wording of a refusal, falling back to its own message."""
+    code = getattr(error, "code", "")
+    template = ERROR_MESSAGES.get(code)
+    if not template:
+        return str(error)
+    try:
+        return template.format(**getattr(error, "params", {}))
+    except (KeyError, IndexError):
+        return str(error)

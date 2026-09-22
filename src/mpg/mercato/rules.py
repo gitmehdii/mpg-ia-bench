@@ -10,7 +10,17 @@ from mpg.engine.lines import Line, line_of
 
 
 class BidRejected(ValueError):
-    """A bid that breaks one of the rules of spec 4.4.2."""
+    """A bid that breaks one of the rules of spec 4.4.2.
+
+    `code` and `params` are carried alongside the message so a presentation layer can
+    word the refusal in its own language. The message itself is unchanged, which is
+    what the JSON API and its tests rely on.
+    """
+
+    def __init__(self, message: str, code: str = "", **params: object) -> None:
+        super().__init__(message)
+        self.code = code
+        self.params = params
 
 
 def squad_breakdown(ultra_positions: Iterable[int]) -> Counter[Line]:
@@ -56,16 +66,23 @@ def validate_bid(
     win more players than they can pay for.
     """
     if already_bid:
-        raise BidRejected("a bid on this player already exists for this round")
+        raise BidRejected(
+            "a bid on this player already exists for this round", "already_bid"
+        )
     if player_owned_by is not None:
-        raise BidRejected("this player is already owned by a participant of the league")
+        raise BidRejected(
+            "this player is already owned by a participant of the league", "owned"
+        )
     if amount < quotation:
         raise BidRejected(
-            f"the minimum bid on this player is its quotation ({quotation}), got {amount}"
+            f"the minimum bid on this player is its quotation ({quotation}), got {amount}",
+            "below_quotation", quotation=quotation, amount=amount,
         )
     total = other_bids_total + amount
     if total > budget:
         raise BidRejected(
             f"the bids of a round may not exceed the budget: {other_bids_total} + "
-            f"{amount} = {total} > {budget}"
+            f"{amount} = {total} > {budget}",
+            "over_budget", others=other_bids_total, amount=amount, total=total,
+            budget=budget,
         )
