@@ -142,6 +142,32 @@ class MatchContext:
 
 
 @dataclass(slots=True)
+class Duel:
+    """One crossing of an opposing line, kept so a goal can be explained (spec 3.6).
+
+    Purely a record of what the comparison already decided: adding it changes no
+    value and no comparison.
+    """
+
+    line: Line
+    #: Mean rating of the opposing line, None when that line is empty.
+    opponent: float | None
+    rating_before: float
+    outcome: Literal["won", "won_on_tie", "lost_on_tie", "lost", "free"]
+    #: Decrement applied after winning this duel: 1 point for the first, then 0.5.
+    cost: float
+    rating_after: float
+
+    @property
+    def passed(self) -> bool:
+        return self.outcome in ("won", "won_on_tie", "free")
+
+
+#: Why a player never ran the gauntlet at all (golden rules 2, 3 and 5).
+SkipReason = Literal["goalkeeper", "already_scored", "below_floor"]
+
+
+@dataclass(slots=True)
 class FinalPlayer:
     """A slot of the final XI, once every rule has been applied."""
 
@@ -160,6 +186,10 @@ class FinalPlayer:
     line_penalty: float = 0.0
     #: Bonuses and malus that touched this slot, for the match report.
     adjustments: list[str] = field(default_factory=list)
+    #: The gauntlet this player ran, duel by duel. Empty when he never ran it.
+    duels: list[Duel] = field(default_factory=list)
+    #: Set when the player was not eligible to run it in the first place.
+    mpg_skip_reason: SkipReason | None = None
 
 
 @dataclass(slots=True)

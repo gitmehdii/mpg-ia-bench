@@ -2,8 +2,8 @@
 
     python -m mpg.cli ingest [--championship 1] [--seasons 2024,2025,2026]
     python -m mpg.cli resolve-round <round_id>
-    python -m mpg.cli resolve-week <league_id> <game_week>
-    python -m mpg.cli replay <fixture_id>
+    python -m mpg.cli resolve-week <league_id> <game_week> [--summary]
+    python -m mpg.cli replay <fixture_id> [--summary]
     python -m mpg.cli standings <league_id>
     python -m mpg.cli scenarios
 """
@@ -18,6 +18,7 @@ from mpg.db.models import League, LeagueMatch
 from mpg.db.session import get_session_factory
 from mpg.ingest.jobs import ingest_history, refresh_all
 from mpg.mercato.service import resolve_round
+from mpg.report_text import render_match_report
 from mpg.services.matchday import resolve_game_week, resolve_league_match
 from mpg.services.standings import as_table, standings
 
@@ -68,12 +69,15 @@ def cmd_resolve_week(args: argparse.Namespace) -> int:
             print("no such league", file=sys.stderr)
             return 1
         results = resolve_game_week(session, league, args.game_week)
-        for result in results:
-            print(
-                f"  {result.home.participant_id} {result.home.score} - "
-                f"{result.away.score} {result.away.participant_id}"
-            )
         session.commit()
+        for result in results:
+            if args.summary:
+                print(
+                    f"  {result.home.participant_id} {result.home.score} - "
+                    f"{result.away.score} {result.away.participant_id}"
+                )
+            else:
+                print(render_match_report(result))
         return 0
     finally:
         session.close()
@@ -91,6 +95,9 @@ def cmd_replay(args: argparse.Namespace) -> int:
         result = resolve_league_match(session, fixture, force=True)
         session.commit()
         print(f"  {before[0]}-{before[1]} becomes {result.home.score}-{result.away.score}")
+        if not args.summary:
+            print()
+            print(render_match_report(result))
         return 0
     finally:
         session.close()
@@ -116,11 +123,11 @@ def cmd_standings(args: argparse.Namespace) -> int:
         session.close()
 
 
-def cmd_scenarios(_args: argparse.Namespace) -> int:
+def cmd_scenarios(args: argparse.Namespace) -> int:
     """Run the five acceptance scenarios of the spec and print their scorelines."""
     from mpg.demo import run_scenarios
 
-    run_scenarios()
+    run_scenarios(full_report=getattr(args, "report", False))
     return 0
 
 
@@ -140,10 +147,16 @@ def build_parser() -> argparse.ArgumentParser:
     week = sub.add_parser("resolve-week", help="resolve a league game week")
     week.add_argument("league_id", type=int)
     week.add_argument("game_week", type=int)
+    week.add_argument(
+        "--summary", action="store_true", help="scorelines only, without the full report"
+    )
     week.set_defaults(func=cmd_resolve_week)
 
     replay = sub.add_parser("replay", help="recompute a fixture flagged for recompute")
     replay.add_argument("fixture_id", type=int)
+    replay.add_argument(
+        "--summary", action="store_true", help="the new score only, without the report"
+    )
     replay.set_defaults(func=cmd_replay)
 
     table = sub.add_parser("standings", help="print a league table")
@@ -151,6 +164,9 @@ def build_parser() -> argparse.ArgumentParser:
     table.set_defaults(func=cmd_standings)
 
     scenarios = sub.add_parser("scenarios", help="run the five acceptance scenarios")
+    scenarios.add_argument(
+        "--report", action="store_true", help="print the full report of each scenario"
+    )
     scenarios.set_defaults(func=cmd_scenarios)
 
     return parser

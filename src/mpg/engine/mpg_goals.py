@@ -9,7 +9,7 @@ would turn genuine near-misses into ties and break the twelfth-man rule.
 from __future__ import annotations
 
 from mpg.engine.lines import GAUNTLET, MPG_GOAL_FLOOR, Line
-from mpg.engine.models import FinalPlayer
+from mpg.engine.models import Duel, FinalPlayer
 
 #: Crossing cost: 1 point after the first duel won, then 0.5 per duel after that.
 FIRST_DUEL_COST = 1.0
@@ -47,11 +47,16 @@ def mpg_goals(
 
     for scorer in attacking:
         scorer.mpg_goal = False
+        scorer.duels = []
+        scorer.mpg_skip_reason = None
         if scorer.slot_line is Line.G:
+            scorer.mpg_skip_reason = "goalkeeper"
             continue                          # golden rule 5: a keeper never scores
         if scorer.real_goals > 0:
+            scorer.mpg_skip_reason = "already_scored"
             continue                          # golden rule 3: already scored for real
         if scorer.rating < MPG_GOAL_FLOOR:
+            scorer.mpg_skip_reason = "below_floor"
             continue                          # golden rule 2: 5.0 minimum
 
         current = scorer.rating
@@ -60,18 +65,31 @@ def mpg_goals(
         for line in GAUNTLET[scorer.slot_line]:
             opponent = averages.get(line)
             if opponent is None:
-                continue                      # empty line: free passage, no decrement
+                # Empty line: free passage, no duel and no decrement (invariant 4.1.8).
+                scorer.duels.append(
+                    Duel(line, None, current, "free", 0.0, current)
+                )
+                continue
+            before = current
             if current > opponent:
-                pass
+                outcome: str = "won"
             elif current == opponent:
-                if not (attacker_wins_ties or at_home):
+                if attacker_wins_ties or at_home:
+                    outcome = "won_on_tie"
+                else:
+                    scorer.duels.append(
+                        Duel(line, opponent, before, "lost_on_tie", 0.0, before)
+                    )
                     passed = False
                     break
             else:
+                scorer.duels.append(Duel(line, opponent, before, "lost", 0.0, before))
                 passed = False
                 break
             duels_won += 1
-            current -= FIRST_DUEL_COST if duels_won == 1 else NEXT_DUEL_COST
+            cost = FIRST_DUEL_COST if duels_won == 1 else NEXT_DUEL_COST
+            current -= cost
+            scorer.duels.append(Duel(line, opponent, before, outcome, cost, current))
 
         if passed:
             goals += 1

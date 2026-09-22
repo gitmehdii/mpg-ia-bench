@@ -20,7 +20,7 @@ def _line(label: str, result, expected: tuple[int, int]) -> None:
     print(f"  [{status}] {label:52} {home} - {away}   (expected {expected[0]} - {expected[1]})")
 
 
-def run_scenarios() -> None:
+def run_scenarios(*, full_report: bool = False) -> None:
     from fixtures.j5_ligue1 import naufrages, parigots, provinciaux
 
     print("\nGame week 5 of Ligue 1 2026-27, the five acceptance scenarios of the spec\n")
@@ -68,12 +68,21 @@ def run_scenarios() -> None:
         f"mandatory still works {mandatory}"
     )
 
-    _line(
-        "5. MPG save and Valise both bite",
-        resolve_match(parigots(), provinciaux(Bonuses(mcdo_target="Diouf", valise=True))),
-        (3, 4),
+    fifth = resolve_match(
+        parigots(), provinciaux(Bonuses(mcdo_target="Diouf", valise=True))
     )
+    _line("5. MPG save and Valise both bite", fifth, (3, 4))
     print()
+
+    if full_report:
+        from mpg.report_text import render_match_report
+
+        for label, match in (
+            ("scenario 2", resolve_match(parigots(), naufrages())),
+            ("scenario 5", fifth),
+        ):
+            print(f"\n----- {label} -----")
+            print(render_match_report(match))
 
 
 if __name__ == "__main__":
