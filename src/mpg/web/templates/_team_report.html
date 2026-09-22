@@ -1,0 +1,94 @@
+{# One side of a match report. `team` is the side, `opponent` the other. #}
+<div class="card">
+  <h2>{{ team_name }} — {{ team.score }}</h2>
+  <p class="sub">{{ fr.score_breakdown(team) | join(' · ') }}</p>
+
+  {% if bonuses %}
+    <p class="small muted">Bonus posés : {{ bonuses | join(', ') }}</p>
+  {% else %}
+    <p class="small muted">Aucun bonus posé.</p>
+  {% endif %}
+
+  <h3>Onze final</h3>
+  {% for line, label in line_labels %}
+    {% set slots = team.final_xi | selectattr('slot_line', 'equalto', line) | list %}
+    {% if slots %}
+      <div class="line-group">
+        <div class="line-head">
+          <span>{{ label }}</span>
+          <span>moyenne {{ fr.average(team.line_averages.get(line)) }}</span>
+        </div>
+        {% for slot in slots %}
+          <div class="player{% if slot.is_rotaldo %} rotaldo{% endif %}">
+            <span class="name">
+              {{ slot.name }}
+              {% if slot.real_goals %}<span class="tag goal">{{ fr.plural(slot.real_goals, 'but', 'buts') }}</span>{% endif %}
+              {% if slot.own_goals %}<span class="tag own">{{ fr.plural(slot.own_goals, 'CSC', 'CSC') }}</span>{% endif %}
+              {% if slot.mpg_goal %}<span class="tag mpg">but MPG</span>{% endif %}
+              {% if slot.is_rotaldo %}<span class="tag ghost">poste vide</span>{% endif %}
+              {% if slot.replacement_kind %}<span class="tag sub">{{ fr.SUBSTITUTION_LABEL.get(slot.replacement_kind, slot.replacement_kind) }}</span>{% endif %}
+              {% if slot.adjustments or slot.line_penalty %}
+                <span class="why">
+                  {{ fr.adjustments(slot) | join(', ') }}{% if slot.adjustments and slot.line_penalty %}, {% endif %}
+                  {% if slot.line_penalty %}{{ fr.signed(slot.line_penalty) }} hors de son poste{% endif %}
+                </span>
+              {% endif %}
+            </span>
+            <span class="rating">{{ fr.rating(slot.rating) }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endfor %}
+
+  {% set subs = team.final_xi | selectattr('replacement_kind') | list %}
+  {% if subs or team.rotaldo_count %}
+    <h3>Remplacements</h3>
+    <ul class="small">
+      {% for slot in subs %}<li>{{ fr.substitution_sentence(slot) }}</li>{% endfor %}
+      {% if team.rotaldo_count %}
+        <li>{{ fr.plural(team.rotaldo_count, 'Rotaldo comble', 'Rotaldos comblent') }} un poste resté vide{% if team.rotaldo_count >= 3 %}, soit {{ fr.plural(team.rotaldo_count // 3, 'CSC encaissé', 'CSC encaissés') }}{% endif %}.</li>
+      {% endif %}
+    </ul>
+  {% endif %}
+
+  {% set runs = fr.runners(team) %}
+  {% if runs %}
+    <h3>Buts MPG, duel par duel</h3>
+    {% for slot in runs %}
+      <div class="run{% if slot.mpg_goal %} scored{% endif %}">
+        <div class="who">
+          <span>{{ slot.name }}</span>
+          <span class="pill">{{ fr.LINE_INITIAL[slot.slot_line] }}</span>
+          <span class="start">part de {{ fr.rating(slot.rating) }}</span>
+        </div>
+        <ul class="duels">
+          {% for duel in slot.duels %}
+            <li class="{{ duel.outcome }}">
+              <span>vs {{ fr.OPPOSING_LINE_LABEL[duel.line] }}</span>
+              <span class="opp">{{ fr.average(duel.opponent) }}</span>
+              <span class="verdict">{{ duel_verdict(duel) }}</span>
+              {% if duel.passed and duel.cost %}<span class="after">{{ fr.signed(-duel.cost) }} → {{ fr.rating(duel.rating_after) }}</span>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+        {% if slot.mpg_goal %}
+          <p class="outcome scored">BUT MPG</p>
+        {% else %}
+          <p class="outcome missed">Pas de but — {{ fr.why_no_goal(slot) }}</p>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% set cancelled = team.goals | selectattr('cancelled_by') | list %}
+  {% if cancelled or team.saved or team.valise_cancelled %}
+    <h3>Buts annulés</h3>
+    <ul class="small">
+      {% if team.saved and opponent_keeper is not none %}
+        <li>Arrêt MPG du gardien adverse ({{ fr.rating(opponent_keeper) }}) : {{ fr.plural(team.saved, 'but réel annulé', 'buts réels annulés') }}.</li>
+      {% endif %}
+      {% for event in cancelled %}<li>{{ fr.goal_sentence(event) }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+</div>

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Connexion — MPG{% endblock %}
+{% block content %}
+<h1>Connexion</h1>
+<p class="sub">Entrez vos identifiants, ou créez un compte.</p>
+
+<div class="card">
+  <form class="stack" method="post" action="/ui/login">
+    <div>
+      <label for="email">Adresse e-mail</label>
+      <input id="email" name="email" type="email" required autocomplete="email" autofocus>
+    </div>
+    <div>
+      <label for="password">Mot de passe</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+    </div>
+    <div><button type="submit">Se connecter</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Créer un compte</h2>
+  <form class="stack" method="post" action="/ui/register">
+    <div>
+      <label for="r-name">Nom affiché</label>
+      <input id="r-name" name="display_name" required maxlength="64">
+    </div>
+    <div>
+      <label for="r-email">Adresse e-mail</label>
+      <input id="r-email" name="email" type="email" required autocomplete="email">
+    </div>
+    <div>
+      <label for="r-password">Mot de passe (8 caractères minimum)</label>
+      <input id="r-password" name="password" type="password" required minlength="8" autocomplete="new-password">
+    </div>
+    <div><button type="submit">Créer le compte</button></div>
+  </form>
+</div>
+{% endblock %}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,14 +17,25 @@ bearer = HTTPBearer(auto_error=False)
 
 SessionDep = Annotated[Session, Depends(get_db)]
 
+#: The web screens keep the same token in a cookie, so they can reuse every
+#: authorisation dependency below rather than growing a second set.
+SESSION_COOKIE = "mpg_session"
+
 
 def current_user(
+    request: Request,
     session: SessionDep,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)] = None,
 ) -> User:
-    if credentials is None:
+    """The caller, from the bearer header or, failing that, the session cookie.
+
+    The cookie is set `SameSite=Lax`, which keeps another site from driving a
+    state-changing request with it while still surviving ordinary navigation.
+    """
+    token = credentials.credentials if credentials else request.cookies.get(SESSION_COOKIE)
+    if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "authentication required")
-    user_id = decode_token(credentials.credentials)
+    user_id = decode_token(token)
     if user_id is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token")
     user = session.get(User, user_id)

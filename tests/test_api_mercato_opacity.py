@@ -105,6 +105,13 @@ def league_in_mercato(api):
     return client, session, league_id, tokens
 
 
+def _find_in_text(text: str, wanted: set[int]) -> set[int]:
+    """Scan a rendered page for any of `wanted`, bounded by non-digits."""
+    return {
+        amount for amount in wanted if re.search(rf"(?<!\d){amount}(?!\d)", text)
+    }
+
+
 def _find_amounts(node: object, wanted: set[int]) -> set[int]:
     """Walk a decoded payload for any of `wanted`, as a number or inside a string.
 
@@ -159,7 +166,6 @@ def test_m8_no_get_endpoint_leaks_a_rival_bid(league_in_mercato):
         "{league_id}": str(league_id),
         "{round_id}": str(round_.id),
         "{fixture_id}": str(fixture_id),
-        "{game_week}": "1",
         "{player_id}": SECRET_PLAYERS["A"],
     }
 
@@ -176,11 +182,17 @@ def test_m8_no_get_endpoint_leaks_a_rival_bid(league_in_mercato):
         checked += 1
         if response.status_code >= 400:
             continue
-        payload = response.json()
-        leaked = _find_amounts(payload, set(SECRET_AMOUNTS.values()))
+        wanted = set(SECRET_AMOUNTS.values())
+        if response.headers.get("content-type", "").startswith("application/json"):
+            leaked = _find_amounts(response.json(), wanted)
+        else:
+            # The /ui screens render HTML, and they are swept exactly the same way.
+            leaked = _find_in_text(response.text, wanted)
         assert not leaked, f"{url} leaks the bid amount(s) {sorted(leaked)}"
 
-    assert checked >= 6, "the sweep should have reached the whole read surface"
+    assert checked >= 12, (
+        "the sweep must reach the whole read surface, the /ui screens included"
+    )
 
 
 def test_m8_c_sees_only_its_own_bids(league_in_mercato):

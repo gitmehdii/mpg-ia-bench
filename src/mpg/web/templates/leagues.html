@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Mes ligues — MPG{% endblock %}
+{% block content %}
+<h1>Mes ligues</h1>
+<p class="sub">{{ rows | length }} ligue{{ 's' if rows | length > 1 else '' }}.</p>
+
+{% if rows %}
+<div class="card">
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Ligue</th><th>Mon équipe</th><th>Statut</th><th class="num">Taille</th><th>Code</th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td class="wide"><a href="/ui/leagues/{{ row.league.id }}">{{ row.league.name }}</a></td>
+          <td class="wide">{{ row.participant.team_name }}{% if row.participant.is_admin %} <span class="pill">admin</span>{% endif %}</td>
+          <td>{{ status_label(row.league.status) }}</td>
+          <td class="num">{{ row.league.size }}</td>
+          <td><code>{{ row.league.code }}</code></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<p class="notice info">Vous ne participez à aucune ligue pour l’instant.</p>
+{% endif %}
+
+<div class="card">
+  <h2>Créer une ligue</h2>
+  <form class="stack" method="post" action="/ui/leagues">
+    <div><label for="c-name">Nom de la ligue</label><input id="c-name" name="name" required maxlength="64"></div>
+    <div><label for="c-team">Nom de mon équipe</label><input id="c-team" name="team_name" required maxlength="64"></div>
+    <div>
+      <label for="c-size">Nombre de participants</label>
+      <select id="c-size" name="size">
+        {% for size in [2, 4, 6, 8, 10] %}<option value="{{ size }}"{% if size == 4 %} selected{% endif %}>{{ size }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="c-legs">Matchs</label>
+      <select id="c-legs" name="return_legs"><option value="1" selected>Aller-retour</option><option value="0">Aller simple</option></select>
+    </div>
+    <div><button type="submit">Créer</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Rejoindre une ligue</h2>
+  <form class="stack" method="post" action="/ui/leagues/join">
+    <div><label for="j-code">Code de la ligue</label><input id="j-code" name="code" required maxlength="12" style="text-transform:uppercase"></div>
+    <div><label for="j-team">Nom de mon équipe</label><input id="j-team" name="team_name" required maxlength="64"></div>
+    <div><button type="submit">Rejoindre</button></div>
+  </form>
+</div>
+{% endblock %}

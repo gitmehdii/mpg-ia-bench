@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}{{ league.name }} — MPG{% endblock %}
+{% block content %}
+
+<h1>{{ league.name }}</h1>
+<p class="sub">
+  {{ status_label(league.status) }} · {{ league.size }} participants ·
+  {{ 'aller-retour' if league.return_legs else 'aller simple' }} ·
+  code <code>{{ league.code }}</code>
+</p>
+
+{% if league.status.value == 'created' %}
+  <p class="notice info">
+    La ligue attend ses participants. Partagez le code <strong>{{ league.code }}</strong>.
+    {% if participant.is_admin %} Vous pourrez ensuite ouvrir le mercato.{% endif %}
+  </p>
+  {% if participant.is_admin %}
+    <form method="post" action="/ui/leagues/{{ league.id }}/mercato/open">
+      <button type="submit">Ouvrir le mercato</button>
+    </form>
+  {% endif %}
+{% endif %}
+
+<div class="card">
+  <h2>Classement</h2>
+  {% if table and table[0].played %}
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="num">#</th><th>Équipe</th>
+            <th class="num">J</th><th class="num">G</th><th class="num">N</th><th class="num">P</th>
+            <th class="num">bp</th><th class="num">bc</th><th class="num">diff</th>
+            <th class="num">réels</th><th class="num">MPG</th>
+            <th class="num">ext.</th><th class="num">Pts</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in table %}
+          <tr>
+            <td class="num">{{ row.rank }}</td>
+            <td class="wide">{{ row.team_name }}</td>
+            <td class="num">{{ row.played }}</td>
+            <td class="num">{{ row.won }}</td>
+            <td class="num">{{ row.drawn }}</td>
+            <td class="num">{{ row.lost }}</td>
+            <td class="num">{{ row.goals_for }}</td>
+            <td class="num">{{ row.goals_against }}</td>
+            <td class="num">{{ '+' if row.goal_difference > 0 else '' }}{{ row.goal_difference }}</td>
+            <td class="num muted">{{ split[row.participant_id].real }}</td>
+            <td class="num muted">{{ split[row.participant_id].mpg }}</td>
+            <td class="num muted">{{ row.away_goals }}</td>
+            <td class="num"><strong>{{ row.points }}</strong></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="small muted" style="margin-top:10px">
+      Départages dans l’ordre : différence de buts générale, meilleure attaque, points en
+      confrontations directes, différence particulière, puis buts marqués à l’extérieur.
+      Les colonnes « réels » et « MPG » détaillent d’où viennent les buts marqués.
+    </p>
+  {% else %}
+    <p class="muted">Aucune journée résolue pour l’instant.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Calendrier</h2>
+  {% if weeks %}
+    {% for week, fixtures in weeks %}
+      <h3>Journée {{ week }}</h3>
+      <div class="scroll">
+        <table>
+          <tbody>
+          {% for fixture in fixtures %}
+            <tr>
+              <td class="wide">{{ names.get(fixture.home_participant_id, '—') }}</td>
+              <td class="num">
+                {% if fixture.resolved_at %}<strong>{{ fixture.home_score }} – {{ fixture.away_score }}</strong>
+                {% else %}<span class="muted">– –</span>{% endif %}
+              </td>
+              <td class="wide">{{ names.get(fixture.away_participant_id, '—') }}</td>
+              <td>
+                {% if fixture.resolved_at %}
+                  <a href="/ui/leagues/{{ league.id }}/matches/{{ fixture.id }}">rapport</a>
+                  {% if fixture.needs_recompute %}<span class="tag ghost">à recalculer</span>{% endif %}
+                {% else %}<span class="muted small">à venir</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">Le calendrier n’est pas encore généré.</p>
+    {% if participant.is_admin %}
+      <form method="post" action="/ui/leagues/{{ league.id }}/fixtures">
+        <button type="submit">Générer le calendrier</button>
+      </form>
+    {% endif %}
+  {% endif %}
+</div>
+
+{% if participant.is_admin and weeks %}
+<div class="card">
+  <h2>Administration</h2>
+  <form class="row" method="post" action="/ui/leagues/{{ league.id }}/resolve">
+    <div>
+      <label for="gw">Résoudre la journée</label>
+      <input id="gw" name="game_week" type="number" min="1" max="38" required style="width:8em">
+    </div>
+    <button type="submit">Résoudre</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

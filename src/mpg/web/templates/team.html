@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}Mon équipe — {{ league.name }}{% endblock %}
+{% block content %}
+
+<p class="sub"><a href="/ui/leagues/{{ league.id }}">← {{ league.name }}</a></p>
+<h1>{{ participant.team_name }}</h1>
+<p class="sub">Journée {{ week }}</p>
+
+<form class="row" method="get" style="margin-bottom:16px">
+  <div>
+    <label for="gw">Voir la journée</label>
+    <input id="gw" name="game_week" type="number" min="1" max="38" value="{{ week }}" style="width:7em">
+  </div>
+  <button type="submit">Afficher</button>
+</form>
+
+<div class="card">
+  <h2>Composition</h2>
+  {% if lineup %}
+    <p class="sub">
+      {{ lineup.formation }}{% if lineup.inherited %} · reprise de la journée précédente{% endif %}
+      {% if lineup.live_mode %} · mode live{% endif %}
+    </p>
+    <div class="lineup">
+      <div>
+        <h3>Titulaires</h3>
+        {% for player in starters %}
+          {% set perf = played.get(player.id) %}
+          <div class="player">
+            <span class="name">
+              {{ player.display_name }}
+              {% if perf and perf.goals_scored %}<span class="tag goal">{{ fr.plural(perf.goals_scored, 'but', 'buts') }}</span>{% endif %}
+              {% if not perf or perf.rating is none %}<span class="tag ghost">n’a pas joué</span>{% endif %}
+            </span>
+            <span class="rating">{{ fr.rating(perf.rating) if perf and perf.rating is not none else '—' }}</span>
+          </div>
+        {% endfor %}
+      </div>
+      <div>
+        <h3>Remplaçants</h3>
+        {% for player in bench %}
+          {% set perf = played.get(player.id) %}
+          <div class="player">
+            <span class="name">
+              {{ player.display_name }}
+              {% if not perf or perf.rating is none %}<span class="tag ghost">n’a pas joué</span>{% endif %}
+            </span>
+            <span class="rating">{{ fr.rating(perf.rating) if perf and perf.rating is not none else '—' }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% if lineup.tactical_subs %}
+      <h3>Remplacements tactiques</h3>
+      <ul class="small">
+        {% for rule in lineup.tactical_subs %}
+          <li>Si {{ rule.starter_id }} est sous {{ fr.rating(rule.threshold) }}, {{ rule.sub_id }} entre.</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% else %}
+    <p class="muted">Aucune composition enregistrée pour cette journée.</p>
+  {% endif %}
+
+  <h3>Modifier la composition</h3>
+  <form class="row" method="get" style="margin-bottom:12px">
+    <input type="hidden" name="game_week" value="{{ week }}">
+    <div>
+      <label for="f-form">Formation</label>
+      <select id="f-form" name="formation" onchange="this.form.submit()">
+        {% for name in formations %}
+          <option value="{{ name }}"{% if name == formation %} selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <noscript><button type="submit">Changer</button></noscript>
+  </form>
+
+  <form method="post" action="/ui/leagues/{{ league.id }}/team/lineups/{{ week }}">
+    <input type="hidden" name="formation" value="{{ formation }}">
+    <div class="lineup">
+      <div>
+        <h3>Titulaires ({{ formation }})</h3>
+        {% for line in slots %}
+          {% set eligible = by_line.get(line, []) %}
+          <div style="margin-bottom:8px">
+            <label for="st-{{ loop.index0 }}">{{ fr.LINE_LABEL[line] | capitalize }}</label>
+            <select id="st-{{ loop.index0 }}" name="starter_{{ loop.index0 }}" required>
+              <option value="">—</option>
+              {% for player in eligible %}
+                <option value="{{ player.id }}"
+                  {%- if picked.starters | length > loop.index0 %}{% endif %}
+                  {%- if player.id in picked.starters %} selected{% endif %}>
+                  {{ player.display_name }}{% if not played.get(player.id) %} (n’a pas joué){% endif %}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        {% endfor %}
+      </div>
+      <div>
+        <h3>Remplaçants (7, dont un gardien)</h3>
+        {% for index in range(7) %}
+          <div style="margin-bottom:8px">
+            <label for="bn-{{ index }}">Remplaçant {{ index + 1 }}</label>
+            <select id="bn-{{ index }}" name="bench_{{ index }}" required>
+              <option value="">—</option>
+              {% for player in squad %}
+                <option value="{{ player.id }}"
+                  {%- if picked.bench | length > index and picked.bench[index] == player.id %} selected{% endif %}>
+                  {{ player.display_name }} ({{ fr.LINE_INITIAL[fr.line_of(player.ultra_position)] }})
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <h3>Remplacements tactiques (5 maximum)</h3>
+    <p class="small muted">« si X est noté sous N, Y entre ». Interdit sur le gardien.</p>
+    {% for index in range(5) %}
+      <div class="row" style="margin-bottom:6px">
+        <div style="flex:1 1 180px">
+          <label for="ts-{{ index }}">Si</label>
+          <select id="ts-{{ index }}" name="tac_starter_{{ index }}">
+            <option value="">—</option>
+            {% for player in squad %}<option value="{{ player.id }}">{{ player.display_name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div style="flex:0 1 110px">
+          <label for="tt-{{ index }}">est sous</label>
+          <input id="tt-{{ index }}" name="tac_threshold_{{ index }}" type="number" step="0.5" min="1" max="10">
+        </div>
+        <div style="flex:1 1 180px">
+          <label for="tu-{{ index }}">alors entre</label>
+          <select id="tu-{{ index }}" name="tac_sub_{{ index }}">
+            <option value="">—</option>
+            {% for player in squad %}<option value="{{ player.id }}">{{ player.display_name }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+    {% endfor %}
+
+    <div style="margin-top:12px"><button type="submit">Enregistrer la composition</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Bonus</h2>
+  {% if this_week %}
+    <p>Posés pour la journée {{ week }} :
+      {% for row in this_week %}
+        <span class="pill">{{ fr.bonus_name(row.bonus_type) }}{% if row.target_player_id %} sur {{ row.target_player_id }}{% endif %}</span>
+      {% endfor %}
+    </p>
+  {% else %}
+    <p class="muted">Aucun bonus posé pour la journée {{ week }}.</p>
+  {% endif %}
+
+  <form class="row" method="post" action="/ui/leagues/{{ league.id }}/team/bonuses/{{ week }}">
+    <div style="flex:1 1 200px">
+      <label for="b-type">Poser un bonus</label>
+      <select id="b-type" name="bonus_type">
+        <option value="defense">Défense</option>
+        <option value="captain">Capitaine</option>
+        {% for row in quotas %}{% endfor %}
+        {% for key, label in [('valise','Valise à Nanard'), ('mcdo','McDo+'), ('suarez','Suarez'),
+                              ('zahia','Zahia'), ('mirror','Miroir'), ('cheat_code','Cheat Code 18-26'),
+                              ('tonton_pat',"Tonton Pat'"), ('formation_424','424')] %}
+          <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="flex:1 1 200px">
+      <label for="b-target">Cible (Capitaine et McDo+)</label>
+      <select id="b-target" name="target_player_id">
+        <option value="">—</option>
+        {% for player in squad %}<option value="{{ player.id }}">{{ player.display_name }}</option>{% endfor %}
+      </select>
+    </div>
+    <button type="submit">Poser</button>
+  </form>
+
+  <h3>Quota restant sur la saison</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Bonus</th><th class="num">Utilisés</th><th class="num">Quota</th><th class="num">Restants</th></tr></thead>
+      <tbody>
+      {% for row in quotas %}
+        <tr>
+          <td class="wide">{{ row.name }}</td>
+          <td class="num">{{ row.spent }}</td>
+          <td class="num">{{ row.total }}</td>
+          <td class="num"><strong>{{ row.total - row.spent }}</strong></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted" style="margin-top:8px">
+    {{ unlimited | join(' et ') }} sont illimités et ne comptent pas dans la limite
+    d’un bonus par journée.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Effectif</h2>
+  {% for line, label in line_order %}
+    {% set players = by_line.get(line, []) %}
+    {% if players %}
+      <div class="line-group">
+        <div class="line-head"><span>{{ label }}</span><span>{{ players | length }}</span></div>
+        {% for player in players %}
+          <div class="player">
+            <span class="name">{{ player.display_name }}</span>
+            <span class="rating">{{ player.quotation }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endblock %}

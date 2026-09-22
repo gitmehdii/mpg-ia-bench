@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}MPG{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('ui_static', path='app.css') }}">
+</head>
+<body>
+<header class="bar">
+  <div class="wrap">
+    <a class="brand" href="/ui/">MPG</a>
+    {% if user %}
+      <nav>
+        <a href="/ui/">Mes ligues</a>
+        {% if league %}
+          <a href="/ui/leagues/{{ league.id }}">{{ league.name }}</a>
+          <a href="/ui/leagues/{{ league.id }}/mercato">Mercato</a>
+          <a href="/ui/leagues/{{ league.id }}/team">Mon équipe</a>
+        {% endif %}
+        <a href="/ui/logout">Déconnexion ({{ user.display_name }})</a>
+      </nav>
+    {% endif %}
+  </div>
+</header>
+
+<main class="wrap">
+  {% if error %}<p class="notice error">{{ error }}</p>{% endif %}
+  {% if message %}<p class="notice ok">{{ message }}</p>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer>Clone de mécaniques MPG — projet personnel. Les notes proviennent de l’API publique MPG.</footer>
+</body>
+</html>

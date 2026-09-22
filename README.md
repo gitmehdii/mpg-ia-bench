@@ -33,8 +33,10 @@ pass: the five game week scenarios and the eight mercato ones.
 | 4 | Closed-bid mercato | done — M1 to M8 green |
 | 5 | Lineups, bonuses, substitutions | done |
 | 6 | Standings and results | done |
+| — | Web screens under `/ui` | done — report, dashboard, mercato, coach |
 
-119 tests, ~5 000 lines of source and ~2 500 of tests.
+173 tests in the default suite and 2 more against a real PostgreSQL, over roughly
+6 500 lines of source and 4 000 of tests.
 
 ## Quick start
 
@@ -97,8 +99,8 @@ cp .env.example .env
 .venv/bin/uvicorn mpg.api.app:app --reload
 ```
 
-The API is the v1 interface: there is no front end. Everything is exercisable from
-`/docs`.
+Then open **http://localhost:8000/ui/**. `/docs` still exposes the whole JSON API,
+which remains the source of truth.
 
 ```bash
 .venv/bin/python -m mpg.scheduler   # ingestion and mercato deadlines
@@ -169,6 +171,71 @@ every value a tie can land on is exactly representable in binary floating point.
 epsilon here would turn genuine near-misses into ties and break the twelfth-man rule —
 the one that makes Nuno Mendes score at 4.00 against a keeper at 4.00 at home, and miss
 the same duel away.
+
+## The screens
+
+Server-rendered with Jinja, served by the same FastAPI app. No build step, no npm, no
+front-end framework, one stylesheet, and JavaScript only where a form cannot do without
+it. Everything a player reads is French; the code, the comments and this file are not.
+
+```
+/ui/login                                   sign in or sign up
+/ui/                                        my leagues, create one, join one by code
+/ui/leagues/{id}                            standings and fixture list
+/ui/leagues/{id}/matches/{fixture}          the match report
+/ui/leagues/{id}/mercato                    the free pool, my bids, my budget
+/ui/leagues/{id}/team                       squad, lineup, bonuses
+```
+
+Authentication is the same token as the API, in an `HttpOnly` cookie set `SameSite=Lax`.
+There is no second set of authorisation rules: `current_user` reads the header or the
+cookie, and every screen goes through the same membership checks the API uses, so a
+non-member gets a 403 on a page exactly as they would on an endpoint.
+
+### The match report
+
+The screen the project exists for. For each side it shows the final XI by line, every
+rating with what moved it, the substitutions and what kind each was, the phantom players
+and the own goal they concede, and the line averages.
+
+And for every player who ran the gauntlet, the crossing itself:
+
+```
+Nuno Mendes (D) 6,0
+  vs attaque adverse 3,25 : passe, -1,0 → 5,0
+  vs milieu adverse 3,50 : passe, -0,5 → 4,5
+  vs défense adverse 3,63 : passe, -0,5 → 4,0
+  vs gardien 4,00 : égalité, avantage au domicile
+  BUT MPG
+```
+
+Players who did not score say why — beaten by a line, tied away from home, already a
+real scorer, under the 5.0 floor, or a goalkeeper. That is the part of the game nobody
+can guess from a scoreline.
+
+The same thing prints in the terminal, from the same wording module, so the two cannot
+drift:
+
+```bash
+.venv/bin/python -m mpg.cli scenarios --report
+.venv/bin/python -m mpg.cli resolve-week <league_id> <game_week>
+```
+
+Reading a report never recomputes it: the report is written once when the fixture
+resolves, and rehydrated into engine objects for display. A stored report renders
+byte-for-byte identically to the live result, which is asserted in the tests.
+
+### Opacity on the screens too
+
+The mercato screen shows the caller's own bids, own budget and own squad, and nothing
+about anyone else — no bid count on a player, no rival budget, not even whether a rival
+has validated their round, which would say how far along they are. A player under three
+bids renders with the same row structure as a player under none, and the test asserts
+that by comparing the two rows with their values stripped out.
+
+The M8 sweep walks every GET endpoint the OpenAPI schema publishes, which now includes
+the `/ui` screens: JSON answers are searched structurally, HTML answers are scanned as
+text, and a rival's bid amount in either is a failure.
 
 ## The mercato
 
@@ -258,16 +325,15 @@ standings — with no network access.
 ```bash
 python -m mpg.cli ingest [--championship 1] [--seasons 2024,2025,2026]
 python -m mpg.cli resolve-round <round_id>
-python -m mpg.cli resolve-week <league_id> <game_week>
-python -m mpg.cli replay <fixture_id>
+python -m mpg.cli resolve-week <league_id> <game_week> [--summary]
+python -m mpg.cli replay <fixture_id> [--summary]
 python -m mpg.cli standings <league_id>
-python -m mpg.cli scenarios
+python -m mpg.cli scenarios [--report]
 ```
 
 ## Out of scope
 
-Expert mode, play-offs beyond the tie-break rule, multi-divisions, badges, chat, and any
-front end.
+Expert mode, play-offs beyond the tie-break rule, multi-divisions, badges and chat.
 
 ## Legal
 

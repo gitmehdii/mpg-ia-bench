@@ -9,10 +9,16 @@ from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal
 
-from mpg.engine.lines import Line
+from mpg.engine.lines import Line, line_of
 from mpg.engine.models import Duel, FinalPlayer, GoalEvent, TeamResult
 
 # --------------------------------------------------------------------------- wording
+
+#: Re-exported so a template can read a player's line straight off its ultraPosition.
+__all__ = ["line_of"]
+
+#: Re-exported so a template can read a player's line straight off its ultraPosition.
+line_of = line_of
 
 LINE_LABEL: dict[Line, str] = {
     Line.G: "gardien",
@@ -227,3 +233,29 @@ def score_breakdown(team: TeamResult) -> list[str]:
     if team.valise_cancelled:
         parts.append(f"-{team.valise_cancelled} Valise à Nanard")
     return parts
+
+
+DUEL_VERDICT: dict[str, str] = {
+    "won": "passe",
+    "won_on_tie": "égalité, avantage au domicile",
+    "lost": "échec",
+    "lost_on_tie": "égalité, avantage à l'adversaire",
+    "free": "ligne vide, traversée sans duel",
+}
+
+
+def duel_verdict(duel: Duel) -> str:
+    """The verdict of one crossing, on its own."""
+    return DUEL_VERDICT.get(duel.outcome, duel.outcome)
+
+
+LEAGUE_STATUS_LABEL: dict[str, str] = {
+    "created": "en création",
+    "mercato": "mercato en cours",
+    "running": "en cours",
+    "finished": "terminée",
+}
+
+
+def status_label(status: object) -> str:
+    return LEAGUE_STATUS_LABEL.get(str(status), str(status))

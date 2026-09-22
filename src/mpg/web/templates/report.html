@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ home_name }} {{ result.home.score }}–{{ result.away.score }} {{ away_name }} — MPG{% endblock %}
+{% block content %}
+
+<p class="sub"><a href="/ui/leagues/{{ league.id }}">← {{ league.name }}</a></p>
+<h1>Journée {{ result.context.game_week }}</h1>
+
+<div class="card">
+  <div class="scoreline">
+    <div class="team">{{ home_name }}</div>
+    <div class="nums">{{ result.home.score }} – {{ result.away.score }}</div>
+    <div class="team">{{ away_name }}</div>
+  </div>
+  <p class="sub small" style="text-align:center">
+    À domicile, une égalité de duel tourne à l’avantage du receveur.
+    {%- if result.context.playoff %} Match de play-off : l’attaquant emporte les égalités.{% endif %}
+  </p>
+</div>
+
+{% with team = result.home, team_name = home_name, bonuses = home_bonuses,
+        opponent_keeper = away_keeper %}
+  {% include "_team_report.html" %}
+{% endwith %}
+
+{% with team = result.away, team_name = away_name, bonuses = away_bonuses,
+        opponent_keeper = home_keeper %}
+  {% include "_team_report.html" %}
+{% endwith %}
+
+<div class="card">
+  <h2>Comment se lit un but MPG</h2>
+  <p class="small muted">
+    Chaque joueur de champ traverse les lignes adverses dans l’ordre : un défenseur affronte
+    l’attaque, le milieu, la défense puis le gardien ; un milieu part du milieu ; un attaquant
+    de la défense. La note comparée est la moyenne de la ligne adverse sur le onze final,
+    bonus compris. Chaque duel gagné coûte 1 point pour le premier, puis 0,5. Il faut au moins
+    5,0 pour marquer, un buteur réel ne marque pas de but MPG, et un gardien jamais.
+  </p>
+</div>
+{% endblock %}

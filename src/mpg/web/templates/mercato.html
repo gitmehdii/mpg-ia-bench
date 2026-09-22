@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Mercato — {{ league.name }}{% endblock %}
+{% block content %}
+
+<p class="sub"><a href="/ui/leagues/{{ league.id }}">← {{ league.name }}</a></p>
+<h1>Mercato</h1>
+
+{% if round %}
+  <p class="sub">
+    Tour {{ round.number }} · clôture le {{ round.deadline_at.strftime('%d/%m/%Y à %Hh%M') }}
+    {% if validated %}· <span class="tag goal">tour validé</span>{% endif %}
+  </p>
+{% else %}
+  <p class="notice info">Le mercato est terminé.</p>
+{% endif %}
+
+<div class="card">
+  <h2>Mon budget</h2>
+  <p><strong>{{ participant.budget }} M€</strong> restants ·
+     {{ squad | length }} joueur{{ 's' if squad | length > 1 else '' }} recruté{{ 's' if squad | length > 1 else '' }}</p>
+  {% set missing = deficit.values() | sum %}
+  {% if missing %}
+    <p class="small muted">
+      Il manque :
+      {% for line, count in deficit.items() if count %}
+        {{ count }} {{ fr.LINE_LABEL[line] }}{{ ', ' if not loop.last else '' }}
+      {% endfor %}
+      — le quota est de 2 gardiens, 6 défenseurs, 6 milieux, 4 attaquants.
+    </p>
+  {% else %}
+    <p class="small muted">Votre effectif respecte le quota.</p>
+  {% endif %}
+  <p class="small muted">
+    Les enchères sont fermées : personne ne voit les vôtres, et vous ne voyez celles de
+    personne. Le plus offrant emporte le joueur à la résolution du tour.
+  </p>
+</div>
+
+{% if round %}
+<div class="card">
+  <h2>Mes enchères</h2>
+  {% if my_bids %}
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Joueur</th><th class="num">Montant</th><th></th></tr></thead>
+        <tbody>
+        {% for bid in my_bids %}
+          <tr>
+            <td class="wide">{{ bid.player_id }}{% if bid.is_random %} <span class="pill">auto</span>{% endif %}</td>
+            <td class="num">{{ bid.amount }} M€</td>
+            <td>
+              <form method="post" action="/ui/leagues/{{ league.id }}/mercato/bids/{{ bid.player_id }}/delete">
+                <button class="ghost" type="submit">retirer</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="small muted" style="margin-top:8px">
+      Total engagé : {{ my_bids | sum(attribute='amount') }} M€ sur {{ participant.budget }} M€.
+      La somme de vos enchères ne peut pas dépasser votre budget.
+    </p>
+  {% else %}
+    <p class="muted">Aucune enchère posée pour ce tour.</p>
+  {% endif %}
+
+  <div class="row" style="margin-top:12px">
+    <form method="post" action="/ui/leagues/{{ league.id }}/mercato/validate">
+      <button type="submit">Valider mon tour</button>
+    </form>
+    <form method="post" action="/ui/leagues/{{ league.id }}/mercato/close">
+      <button class="ghost" type="submit">Fermer mon mercato</button>
+    </form>
+  </div>
+  <p class="small muted" style="margin-top:8px">
+    Sans validation avant la clôture, des enchères sont générées à votre place sur vos
+    postes déficitaires.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Joueurs libres</h2>
+  <form class="row" method="get">
+    <div>
+      <label for="f-pos">Poste</label>
+      <select id="f-pos" name="position">
+        <option value="">tous</option>
+        {% for code, label in [('G','gardiens'), ('D','défenseurs'), ('M','milieux'), ('A','attaquants')] %}
+          <option value="{{ code }}"{% if position == code %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">Filtrer</button>
+  </form>
+
+  <div class="scroll" style="margin-top:12px">
+    <table>
+      <thead><tr><th>Joueur</th><th>Poste</th><th class="num">Cote</th><th class="num">Enchère</th></tr></thead>
+      <tbody>
+      {% for player in pool %}
+        {% set row = players.get(player.player_id) %}
+        <tr>
+          <td class="wide">{{ row.display_name if row else player.player_id }}</td>
+          <td>{{ fr.LINE_LABEL[player.line] }}</td>
+          <td class="num">{{ player.quotation }} M€</td>
+          <td class="num">
+            <form class="row" method="post" action="/ui/leagues/{{ league.id }}/mercato/bids" style="justify-content:flex-end">
+              <input type="hidden" name="player_id" value="{{ player.player_id }}">
+              <input type="number" name="amount" min="{{ player.quotation }}" value="{{ player.quotation }}"
+                     required style="width:6.5em" aria-label="Montant pour {{ row.display_name if row else player.player_id }}">
+              <button type="submit">Miser</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted" style="margin-top:8px">
+    L’enchère minimale est la cote du joueur. Cette liste est identique pour tout le
+    monde : elle ne dit pas si un joueur est convoité.
+  </p>
+</div>
+{% endif %}
+
+{% if awards %}
+<div class="card">
+  <h2>Tours résolus</h2>
+  <ul class="small">
+    {% for entry in awards | reverse %}
+      <li>
+        {% if entry.kind == 'draw' %}
+          <span class="tag ghost">tirage au sort</span>
+          {{ entry.player_id }} à {{ entry.detail.amount }} M€ entre
+          {% for pid in entry.detail.candidates %}{{ names.get(pid, pid) }}{{ ', ' if not loop.last }}{% endfor %}
+          — remporté par {{ names.get(entry.detail.winner, entry.detail.winner) }}
+        {% elif entry.kind == 'draft' %}
+          <span class="tag ghost">repêchage</span>
+          {{ entry.player_id }} attribué à {{ names.get(entry.participant_id, '—') }}
+          pour {{ entry.detail.price }} M€{% if entry.detail.free_of_charge %} (budget épuisé){% endif %}
+        {% else %}
+          {{ entry.player_id }} → {{ names.get(entry.participant_id, '—') }}
+          pour {{ entry.detail.price }} M€
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}
