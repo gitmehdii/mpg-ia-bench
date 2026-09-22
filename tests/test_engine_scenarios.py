@@ -7,8 +7,8 @@ intermediate facts the spec calls out as the things not to get wrong.
 from __future__ import annotations
 
 import pytest
-from fixtures.j5_ligue1 import naufrages, parigots, provinciaux
 
+from fixtures.j5_ligue1 import naufrages, parigots, provinciaux
 from mpg.engine import Bonuses, MatchContext, TacticalSub, resolve_match
 
 

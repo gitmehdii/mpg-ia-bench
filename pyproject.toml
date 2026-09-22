@@ -19,6 +19,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "respx>=0.21", "ruff>=0.7"]
+# Bundles real PostgreSQL binaries, so the `db` suite runs without Docker or root.
+pg = ["pgserver>=0.1.4"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -44,6 +46,10 @@ ignore = [
     # write these tests; naming the unused halves adds noise, not information.
     "RUF059",
 ]
+
+[tool.ruff.lint.isort]
+# `tests/` is on the path via `pythonpath`, so its helpers are first-party.
+known-first-party = ["mpg", "fixtures"]
 
 [tool.ruff.lint.per-file-ignores]
 # Test helpers deliberately import inside functions to keep the fixtures readable.

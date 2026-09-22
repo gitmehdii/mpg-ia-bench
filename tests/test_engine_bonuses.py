@@ -4,8 +4,8 @@ invariants of spec 4.1 that have no scenario of their own."""
 from __future__ import annotations
 
 import pytest
-from fixtures.j5_ligue1 import naufrages, parigots, provinciaux
 
+from fixtures.j5_ligue1 import naufrages, parigots, provinciaux
 from mpg.engine import Bonuses, LiveSub, MatchContext, TacticalSub, resolve_match
 from mpg.engine.lines import Line
 

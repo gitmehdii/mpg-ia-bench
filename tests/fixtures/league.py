@@ -87,13 +87,24 @@ def seed_pool(session: Session, championship_id: int = 1) -> None:
 
 
 def make_league(
-    session: Session, *, size: int = 4, seed: int = 42, return_legs: bool = True
+    session: Session,
+    *,
+    size: int = 4,
+    seed: int = 42,
+    return_legs: bool = True,
+    with_pool: bool = True,
+    code: str | None = None,
+    deadline_at: datetime | None = None,
 ) -> tuple[League, list[Participant], MercatoRound]:
-    """A league in mercato, one round open, with a fixed seed for reproducibility."""
-    seed_pool(session)
+    """A league in mercato, one round open, with a fixed seed for reproducibility.
+
+    `with_pool=False` skips seeding the player pool, for when several leagues share one.
+    """
+    if with_pool:
+        seed_pool(session)
     league = League(
         name="Test League",
-        code=f"TEST{seed}",
+        code=code or f"TEST{seed}",
         championship_id=1,
         size=size,
         return_legs=return_legs,
@@ -106,7 +117,7 @@ def make_league(
     participants: list[Participant] = []
     for index, label in enumerate("ABCDEFGHIJ"[:size]):
         user = User(
-            email=f"{label.lower()}@example.com",
+            email=f"{label.lower()}-{code or seed}@example.com",
             display_name=label,
             password_hash="x",
         )
@@ -127,7 +138,7 @@ def make_league(
         league_id=league.id,
         number=1,
         opens_at=league.mercato_opens_at,
-        deadline_at=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        deadline_at=deadline_at or datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
         seed=seed,
     )
     session.add(round_)

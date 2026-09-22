@@ -11,9 +11,9 @@ import json
 from pathlib import Path
 
 import pytest
-from fixtures.league import make_session
 from sqlalchemy import func, select
 
+from fixtures.league import make_session
 from mpg.db.models import (
     Championship,
     LeagueMatch,

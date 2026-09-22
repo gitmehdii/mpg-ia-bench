@@ -8,7 +8,6 @@ case ever shows MPG does it the other way.
 from __future__ import annotations
 
 from fixtures.j5_ligue1 import naufrages, parigots, provinciaux
-
 from mpg.engine import Bonuses, EngineFlags, resolve_match
 from mpg.engine.flags import DEFAULT_FLAGS
 from mpg.engine.lines import Line

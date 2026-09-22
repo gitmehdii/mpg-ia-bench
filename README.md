@@ -42,12 +42,50 @@ pass: the five game week scenarios and the eight mercato ones.
 python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
-The engine and the mercato algorithms are pure, so the whole suite runs with no
+The engine and the mercato algorithms are pure, so the default suite runs with no
 database and no network:
 
 ```bash
-.venv/bin/python -m pytest -q
+.venv/bin/python -m pytest -q -m "not db"
 ```
+
+### `pytest` alone does not cover concurrency
+
+Two tests are marked `db` and are skipped by default, because they need a real
+PostgreSQL. They are not optional extras: SQLite accepts `SELECT ... FOR UPDATE` and
+**silently drops the clause**, so the pessimistic lock the mercato resolution depends
+on is a no-op under the default suite.
+
+```
+Postgres : SELECT ... FROM league WHERE league.id = %(id_1)s FOR UPDATE
+SQLite   : SELECT ... FROM league WHERE league.id = ?
+```
+
+The idempotence test covers sequential re-entry; only the `db` suite covers two
+transactions arriving together, which is what the cron firing at the deadline and a
+last participant validating in the same millisecond actually look like.
+
+```bash
+docker compose up -d db
+MPG_TEST_DATABASE_URL=postgresql+psycopg://mpg:mpg@localhost:5432/mpg \
+  .venv/bin/python -m pytest -q -m db
+```
+
+Without Docker, `pip install -e ".[pg]"` brings real PostgreSQL binaries in as a
+Python package, needing no server and no root:
+
+```bash
+.venv/bin/python -c "import pgserver; print(pgserver.get_server('.pgdata', cleanup_mode=None).get_uri())"
+```
+
+Both of these tests were checked by removing the lock and confirming they fail: without
+`FOR UPDATE`, both transactions enter the critical section and the loser dies on a
+unique constraint instead of being serialised. The test tells those two outcomes apart
+on purpose — a serialisation failure is a fine way to lose, a constraint violation is
+proof that the lock was not doing its job.
+
+CI runs `pytest -m "not db"` on every push, and the `db` suite in a second job with a
+PostgreSQL 16 service container, which also checks the migrations apply and roll back.
 
 For the API and the ingestion, bring up PostgreSQL 16 and apply the migrations:
 

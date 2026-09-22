@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from fixtures.league import make_league, make_session
 from sqlalchemy import select
 
+from fixtures.league import make_league, make_session
 from mpg.config import BONUS_QUOTAS
 from mpg.db.models import (
     LeagueMatch,

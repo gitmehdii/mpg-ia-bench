@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from fixtures.j5_ligue1 import naufrages, parigots, provinciaux
-
 from mpg.engine import Bonuses, LiveSub, resolve_match
 
 

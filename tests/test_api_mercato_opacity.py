@@ -7,13 +7,13 @@ the existence, not an aggregate that would let one be deduced.
 
 from __future__ import annotations
 
-import json
+import re
 
 import pytest
 from fastapi.testclient import TestClient
-from fixtures.league import seed_pool
 from sqlalchemy import select
 
+from fixtures.league import seed_pool
 from mpg.api.app import app
 from mpg.db.base import Base
 from mpg.db.models import Bid, LeagueStatus, MercatoRound, Participant
@@ -105,6 +105,50 @@ def league_in_mercato(api):
     return client, session, league_id, tokens
 
 
+def _find_amounts(node: object, wanted: set[int]) -> set[int]:
+    """Walk a decoded payload for any of `wanted`, as a number or inside a string.
+
+    Walking the structure rather than grepping the serialised body means a secret
+    cannot hide as a field value, and a coincidental digit run inside a longer number
+    cannot raise a false alarm.
+    """
+    found: set[int] = set()
+    if isinstance(node, bool):
+        return found
+    if isinstance(node, int):
+        if node in wanted:
+            found.add(node)
+    elif isinstance(node, str):
+        for amount in wanted:
+            # Bounded by non-digits, so 233 does not match inside 12336.
+            if re.search(rf"(?<!\d){amount}(?!\d)", node):
+                found.add(amount)
+    elif isinstance(node, dict):
+        for key, value in node.items():
+            found |= _find_amounts(key, wanted)
+            found |= _find_amounts(value, wanted)
+    elif isinstance(node, list):
+        for item in node:
+            found |= _find_amounts(item, wanted)
+    return found
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"bids": [{"amount": 317}]}, {317}),          # a number, nested
+        ({"note": "bid of 419 euros"}, {419}),         # hidden inside a string
+        ([[{"a": {"b": 233}}]], {233}),                # deeply nested
+        ({"total": 12336}, set()),                     # a longer number must not match
+        ({"id": "pool_317_x"}, {317}),                 # bounded by non-digits, so it counts
+        ({"budget": 500, "ok": True}, set()),          # a clean payload
+    ],
+)
+def test_the_leak_detector_detects(payload, expected):
+    """The sweep is only worth as much as its detector, so the detector is tested too."""
+    assert _find_amounts(payload, {317, 419, 233}) == expected
+
+
 def test_m8_no_get_endpoint_leaks_a_rival_bid(league_in_mercato):
     """Sweep every GET route in the OpenAPI schema as C and look for any leak."""
     client, session, league_id, tokens = league_in_mercato
@@ -132,11 +176,9 @@ def test_m8_no_get_endpoint_leaks_a_rival_bid(league_in_mercato):
         checked += 1
         if response.status_code >= 400:
             continue
-        body = json.dumps(response.json(), ensure_ascii=False)
-        for label, amount in SECRET_AMOUNTS.items():
-            assert str(amount) not in body, (
-                f"{url} leaks {label}'s bid amount {amount}: {body[:400]}"
-            )
+        payload = response.json()
+        leaked = _find_amounts(payload, set(SECRET_AMOUNTS.values()))
+        assert not leaked, f"{url} leaks the bid amount(s) {sorted(leaked)}"
 
     assert checked >= 6, "the sweep should have reached the whole read surface"
 

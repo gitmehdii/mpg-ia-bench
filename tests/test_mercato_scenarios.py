@@ -7,9 +7,9 @@ the seed pinned to 42 so every draw is reproducible.
 from __future__ import annotations
 
 import pytest
-from fixtures.league import make_league, make_session
 from sqlalchemy import func, select
 
+from fixtures.league import make_league, make_session
 from mpg.db.models import Bid, MercatoLog, MercatoRound, Roster
 from mpg.mercato.rules import BidRejected, quota_satisfied
 from mpg.mercato.service import (

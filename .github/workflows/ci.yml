@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # The fast suite: engine, mercato algorithms, services and API, all on SQLite in
+  # memory. No server, no network.
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check src tests
+      - name: Tests
+        run: pytest -m "not db" -q
+
+  # The concurrency suite. SQLite drops `FOR UPDATE` silently, so the pessimistic
+  # lock in the mercato resolution can only be checked against a real server.
+  concurrency:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: mpg
+          POSTGRES_PASSWORD: mpg
+          POSTGRES_DB: mpg_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mpg"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: Migrations apply cleanly
+        env:
+          MPG_DATABASE_URL: postgresql+psycopg://mpg:mpg@localhost:5432/mpg_test
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+      - name: Concurrency tests
+        env:
+          MPG_TEST_DATABASE_URL: postgresql+psycopg://mpg:mpg@localhost:5432/mpg_test
+        run: pytest -m db -q

@@ -22,54 +22,96 @@ from mpg.mercato.service import close_mercato, mercato_should_close, resolve_rou
 log = logging.getLogger(__name__)
 
 
-def run_ingestion() -> None:
+def run_ingestion(championship_ids: list[int] | None = None) -> None:
+    """Refresh each championship in its own transaction.
+
+    One championship whose payload is malformed must not roll back the ingestion of
+    the others, and must not keep rolling them back on every tick afterwards.
+    """
+    settings = get_settings()
+    championship_ids = championship_ids or [settings.default_championship]
     session = get_session_factory()()
     try:
-        report = refresh_all(session)
-        session.commit()
-        log.info(
-            "ingestion: %s players, %s new quotations, %s ratings, %s revised, %s fixtures flagged",
-            report.players, report.quotations, report.performances,
-            report.revised_performances, report.flagged_fixtures,
-        )
-    except Exception:
-        session.rollback()
-        log.exception("ingestion failed")
+        for championship_id in championship_ids:
+            try:
+                report = refresh_all(session, championship_id)
+                session.commit()
+                log.info(
+                    "ingestion of championship %s: %s players, %s new quotations, "
+                    "%s ratings, %s revised, %s fixtures flagged",
+                    championship_id, report.players, report.quotations,
+                    report.performances, report.revised_performances,
+                    report.flagged_fixtures,
+                )
+            except Exception:
+                session.rollback()
+                log.exception("ingestion of championship %s failed", championship_id)
     finally:
         session.close()
 
 
 def run_mercato_deadlines() -> None:
-    """Resolve every round whose deadline has passed. Idempotent by `resolved_at`, so
-    a double fire is harmless."""
+    """Resolve every round whose deadline has passed, one league at a time.
+
+    Each league gets its own try and its own commit. Sharing a single transaction
+    would mean one league in a bad state rolling back every other league resolved in
+    the same tick, and doing it again on the next tick, and the one after -- a single
+    broken league would freeze the mercato of the whole instance indefinitely.
+
+    Idempotent by `resolved_at`, so a double fire is harmless.
+    """
     session = get_session_factory()()
     try:
         now = datetime.now(UTC)
-        due = session.execute(
-            select(MercatoRound).where(
-                MercatoRound.resolved_at.is_(None), MercatoRound.deadline_at <= now
-            )
-        ).scalars().all()
-        for round_ in due:
-            if resolve_round(session, round_.id):
-                log.info("mercato round %s of league %s resolved", round_.number, round_.league_id)
-        # A league whose 7 days are up closes even if no round was due.
-        leagues = session.execute(
-            select(League).where(League.status == LeagueStatus.MERCATO)
-        ).scalars().all()
-        for league in leagues:
-            current = session.execute(
+        # Read the identifiers up front: the ORM objects would be expired by the
+        # rollbacks between iterations.
+        due = [
+            (row.id, row.number, row.league_id)
+            for row in session.execute(
                 select(MercatoRound).where(
-                    MercatoRound.league_id == league.id, MercatoRound.resolved_at.is_(None)
-                ).order_by(MercatoRound.number)
-            ).scalars().first()
-            if current is not None and mercato_should_close(session, league, current):
-                close_mercato(session, league)
-                log.info("mercato of league %s closed", league.id)
-        session.commit()
-    except Exception:
-        session.rollback()
-        log.exception("mercato scheduling failed")
+                    MercatoRound.resolved_at.is_(None), MercatoRound.deadline_at <= now
+                )
+            ).scalars()
+        ]
+        for round_id, number, league_id in due:
+            try:
+                if resolve_round(session, round_id):
+                    session.commit()
+                    log.info("mercato round %s of league %s resolved", number, league_id)
+                else:
+                    session.rollback()
+            except Exception:
+                session.rollback()
+                log.exception(
+                    "league %s: mercato round %s failed", league_id, number
+                )
+
+        # A league whose 7 days are up closes even if no round was due.
+        league_ids = list(
+            session.execute(
+                select(League.id).where(League.status == LeagueStatus.MERCATO)
+            ).scalars()
+        )
+        for league_id in league_ids:
+            try:
+                league = session.get(League, league_id)
+                if league is None:
+                    continue
+                current = session.execute(
+                    select(MercatoRound).where(
+                        MercatoRound.league_id == league.id,
+                        MercatoRound.resolved_at.is_(None),
+                    ).order_by(MercatoRound.number)
+                ).scalars().first()
+                if current is not None and mercato_should_close(session, league, current):
+                    close_mercato(session, league)
+                    session.commit()
+                    log.info("mercato of league %s closed", league.id)
+                else:
+                    session.rollback()
+            except Exception:
+                session.rollback()
+                log.exception("league %s: closing the mercato failed", league_id)
     finally:
         session.close()
 
