@@ -5,6 +5,7 @@
     python -m mpg.cli resolve-week <league_id> <game_week> [--summary]
     python -m mpg.cli replay <fixture_id> [--summary]
     python -m mpg.cli standings <league_id>
+    python -m mpg.cli demo
     python -m mpg.cli scenarios
 """
 
@@ -123,6 +124,41 @@ def cmd_standings(args: argparse.Namespace) -> int:
         session.close()
 
 
+def cmd_demo(args: argparse.Namespace) -> int:
+    """Seed a browsable league and print how to reach it."""
+    from sqlalchemy import create_engine
+
+    from mpg.db.models import Base
+    from mpg.demo_data import seed
+
+    engine = create_engine(get_settings().database_url, future=True)
+    Base.metadata.create_all(engine)
+
+    session = get_session_factory()()
+    try:
+        info = seed(session)
+        session.commit()
+    finally:
+        session.close()
+
+    base = args.base_url.rstrip("/")
+    print()
+    print("  Base de démonstration prête.")
+    print(f"    {base}/ui/login")
+    print()
+    print(f"    alice@example.com  /  {info['password']}   (Les Parigots, admin)")
+    print(f"    bob@example.com    /  {info['password']}")
+    print()
+    for row in info["leagues"]:
+        if not row["fixture_id"]:
+            continue
+        home, away = row["score"]
+        print(f"    {row['name']}  —  {home} - {away}")
+        print(f"      {base}/ui/leagues/{row['league_id']}/matches/{row['fixture_id']}")
+    print()
+    return 0
+
+
 def cmd_scenarios(args: argparse.Namespace) -> int:
     """Run the five acceptance scenarios of the spec and print their scorelines."""
     from mpg.demo import run_scenarios
@@ -162,6 +198,10 @@ def build_parser() -> argparse.ArgumentParser:
     table = sub.add_parser("standings", help="print a league table")
     table.add_argument("league_id", type=int)
     table.set_defaults(func=cmd_standings)
+
+    demo = sub.add_parser("demo", help="seed a browsable demo league")
+    demo.add_argument("--base-url", default="http://localhost:8000")
+    demo.set_defaults(func=cmd_demo)
 
     scenarios = sub.add_parser("scenarios", help="run the five acceptance scenarios")
     scenarios.add_argument(

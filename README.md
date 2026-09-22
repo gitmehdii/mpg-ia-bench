@@ -102,6 +102,22 @@ cp .env.example .env
 Then open **http://localhost:8000/ui/**. `/docs` still exposes the whole JSON API,
 which remains the source of truth.
 
+### Seeing it without setting anything up
+
+`mpg demo` seeds two leagues on the real game week 5 figures and resolves them, so
+there is something to read straight away. It needs no network and no PostgreSQL:
+
+```bash
+MPG_DATABASE_URL="sqlite:///demo.db" .venv/bin/python -m mpg.cli demo
+MPG_DATABASE_URL="sqlite:///demo.db" .venv/bin/uvicorn mpg.api.app:app
+```
+
+It prints the two accounts (`alice@example.com` and `bob@example.com`, password
+`motdepasse`) and a link straight to each report. One league is the blow-out, which
+shows successful gauntlets, a tactical substitution and a mandatory one; the other is
+the 5-4 of acceptance scenario 1, with Suarez and the Cheat Code crossed, where a dozen
+runs fail and each says why.
+
 ```bash
 .venv/bin/python -m mpg.scheduler   # ingestion and mercato deadlines
 ```
