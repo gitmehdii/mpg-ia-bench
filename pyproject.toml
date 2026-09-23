@@ -50,7 +50,7 @@ ignore = [
 ]
 # User-facing strings are French, and French typography is not a homoglyph attack:
 # the curly apostrophe, the em dash and the true minus sign are all correct here.
-allowed-confusables = ["\u2019", "\u2014", "\u2212", "\u00a0"]
+allowed-confusables = ["\u2019", "\u2014", "\u2013", "\u2212", "\u00a0"]
 
 [tool.ruff.lint.isort]
 # `tests/` is on the path via `pythonpath`, so its helpers are first-party.

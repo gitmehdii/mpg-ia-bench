@@ -180,34 +180,61 @@ def cmd_bench(args: argparse.Namespace) -> int:
             print(f"disponibles : {', '.join(known)}", file=sys.stderr)
             return 1
 
-    agents = [
-        LlmAgent(
-            name=model,
-            complete=OllamaClient(
-                model, host=args.host, timeout=args.timeout, think=args.think
-            ),
-        )
-        for model in models
-    ]
-    if args.baseline or len(agents) % 2:
-        agents.append(HeuristicAgent(name="heuristique"))
-    if len(agents) % 2:
-        agents.append(HeuristicAgent(name="heuristique-2", premium=0.3))
+    def make_agents(run_index: int) -> list:
+        """A fresh set per run, each client sampling with its own seed.
+
+        At temperature zero and an identical prompt a model answers identically, so
+        runs that cannot differ are not replicates.
+        """
+        built = [
+            LlmAgent(
+                name=model,
+                complete=OllamaClient(
+                    model, host=args.host, timeout=args.timeout, think=args.think,
+                    temperature=args.temperature, seed=42 + run_index,
+                ),
+            )
+            for model in models
+        ]
+        if args.baseline or len(built) % 2:
+            built.append(HeuristicAgent(name="heuristique"))
+        if len(built) % 2:
+            built.append(HeuristicAgent(name="heuristique-2", premium=0.30))
+        return built
+
+    agents = make_agents(0)
 
     engine = create_engine(get_settings().database_url, future=True)
     Base.metadata.create_all(engine)
     session = get_session_factory()()
     try:
         weeks = [int(w) for w in args.game_weeks.split(",") if w.strip()]
-        result = run_bench(
-            session, agents, game_weeks=weeks, mercato_rounds=args.rounds,
-            name=args.name,
-        )
-        session.commit()
+        if args.runs > 1:
+            from mpg.bench.aggregate import run_many
+            from mpg.bench.report import render_aggregate
+
+            def announce(index: int, run: object) -> None:
+                print(f"  run {index + 1}/{args.runs} terminé", flush=True)
+
+            multi = run_many(
+                None, make_agents, game_weeks=weeks, runs=args.runs,
+                session=session, mercato_rounds=args.rounds, name=args.name,
+                on_run=announce,
+            )
+            session.commit()
+            print(render_aggregate(multi))
+            for run in multi.runs:
+                print(render(run))
+            result = multi.runs[-1]
+        else:
+            result = run_bench(
+                session, agents, game_weeks=weeks, mercato_rounds=args.rounds,
+                name=args.name,
+            )
+            session.commit()
+            print(render(result))
     finally:
         session.close()
-
-    print(render(result))
     session = get_session_factory()()
     try:
         from mpg.services.recap import recap_game_week
@@ -323,6 +350,9 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--baseline", action="store_true",
                        help="add the heuristic agent as a control")
     bench.add_argument("--name", default="Benchmark")
+    bench.add_argument("--runs", type=int, default=1,
+                       help="play the benchmark this many times and pool the results")
+    bench.add_argument("--temperature", type=float, default=0.0)
     bench.add_argument("--think", action="store_true",
                        help="let reasoning models think; they return an empty object "
                             "in JSON mode when they do")

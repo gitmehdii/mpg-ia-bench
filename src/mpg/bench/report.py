@@ -52,3 +52,44 @@ def render(result: BenchResult) -> str:
 
     lines.append("")
     return "\n".join(lines)
+
+
+def render_aggregate(result) -> str:
+    """The pooled table. Means, and the spread that says how much was luck."""
+    from mpg.presentation import number
+
+    runs = result.aggregates[0].runs if result.aggregates else 0
+    lines = [
+        "",
+        f"  Benchmark agrégé — {runs} run(s), journée(s) "
+        f"{', '.join(map(str, result.game_weeks))}",
+        "  " + "─" * 88,
+        f"  {'#':>2}  {'agent':<22} {'pts moy':>8} {'écart':>7} {'1ers':>5} "
+        f"{'diff':>6} {'MPG':>5} {'budget':>8} {'fiab.':>6} {'temps/run':>10}",
+    ]
+    for rank, entry in enumerate(result.aggregates, start=1):
+        spread = number(entry.points_spread, 1) if entry.runs > 1 else "—"
+        mpg = number(sum(entry.mpg_goals) / entry.runs, 1) if entry.runs else "0"
+        budget = int(sum(entry.budget_spent) / entry.runs) if entry.runs else 0
+        reliability = f"{entry.reliability * 100:.0f}%" if entry.calls else "—"
+        seconds = f"{number(entry.mean_seconds, 0)}s" if entry.seconds else "—"
+        lines.append(
+            f"  {rank:>2}  {entry.name[:22]:<22} {number(entry.mean_points, 2):>8} "
+            f"{spread:>7} {entry.wins:>5} {number(entry.mean_goal_difference, 1):>6} "
+            f"{mpg:>5} {budget:>6} M {reliability:>6} {seconds:>10}"
+        )
+
+    if runs > 1:
+        lines += [
+            "",
+            "  « écart » est l'écart-type des points entre runs : s'il approche l'écart",
+            "  entre deux agents, le classement ne les sépare pas vraiment.",
+        ]
+    incomplete = [e for e in result.aggregates if e.incomplete_squads]
+    if incomplete:
+        lines += ["", "  Effectifs complétés d'office au repêchage :"]
+        lines += [
+            f"    {e.name} — {e.incomplete_squads}/{e.runs} run(s)" for e in incomplete
+        ]
+    lines.append("")
+    return "\n".join(lines)

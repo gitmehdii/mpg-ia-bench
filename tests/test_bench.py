@@ -489,3 +489,104 @@ def test_availability_is_never_read_from_the_season_totals(ligue1):
     for card in view.squad:
         # Only one week is on record before week 5, so nothing can claim more.
         assert card.appearances <= card.weeks_known == 1
+
+
+# ------------------------------------------------------------------ several runs
+
+def test_pooling_several_runs(ligue1):
+    from mpg.bench.aggregate import run_many
+
+    session = ligue1
+
+    def make(index: int) -> list:
+        return [
+            HeuristicAgent(name="alpha"),
+            HeuristicAgent(name="beta", premium=0.3),
+        ]
+
+    result = run_many(
+        None, make, game_weeks=[PLAY_WEEK], runs=3, session=session
+    )
+
+    assert len(result.runs) == 3
+    assert len(result.aggregates) == 2
+    for entry in result.aggregates:
+        assert entry.runs == 3
+        assert len(entry.points) == 3
+        assert 0.0 <= entry.mean_points <= 3.0
+        assert entry.reliability == 1.0
+    # Every run built its own league, so nothing was replayed on top of another.
+    assert len({run.league_id for run in result.runs}) == 3
+
+
+def test_the_seating_rotates_between_runs(ligue1):
+    """Runs that cannot differ are not replicates: the pairings and home advantage
+    have to move, since the home side wins tied duels."""
+    from mpg.bench.aggregate import run_many
+    from mpg.db.models import LeagueMatch
+
+    session = ligue1
+
+    def make(index: int) -> list:
+        return [HeuristicAgent(name=f"a{i}") for i in range(4)]
+
+    result = run_many(None, make, game_weeks=[PLAY_WEEK], runs=2, session=session)
+
+    homes = []
+    for run in result.runs:
+        fixtures = session.execute(
+            select(LeagueMatch).where(
+                LeagueMatch.league_id == run.league_id,
+                LeagueMatch.game_week_number == PLAY_WEEK,
+            ).order_by(LeagueMatch.id)
+        ).scalars().all()
+        names = {
+            report.participant_id: report.name for report in run.agents
+        }
+        homes.append(
+            sorted(names[f.home_participant_id] for f in fixtures)
+        )
+    assert homes[0] != homes[1], "the seating did not move between runs"
+
+
+def test_the_spread_is_reported(ligue1):
+    from mpg.bench.aggregate import Aggregate
+
+    entry = Aggregate(name="x", points=[0, 3, 3], ranks=[2, 1, 1])
+    assert entry.mean_points == 2.0
+    assert entry.points_spread > 0
+    assert entry.wins == 2
+
+    lone = Aggregate(name="y", points=[3], ranks=[1])
+    assert lone.points_spread == 0.0, "one run has no spread to report"
+
+
+def test_the_html_report_holds_the_mercato_and_every_fixture(ligue1, tmp_path):
+    from mpg.bench.aggregate import run_many
+    from mpg.bench.html_report import render_html
+
+    session = ligue1
+    result = run_many(
+        None, lambda _i: [HeuristicAgent(name="alpha"), HeuristicAgent(name="beta")],
+        game_weeks=[PLAY_WEEK], runs=2, session=session,
+    )
+
+    page = render_html(session, result, title="Essai")
+
+    assert page.startswith("<!doctype html>")
+    assert "Classement agrégé" in page
+    assert "Le mercato" in page
+    assert page.count("Run ") >= 2
+    assert f"Journée {PLAY_WEEK}" in page
+    assert "alpha" in page and "beta" in page
+    # The lines of both teams are laid out facing each other.
+    for label in ("Gardien", "Défense", "Milieu", "Attaque"):
+        assert label in page
+    assert "moyenne d’équipe" in page
+    # Self-contained: the stylesheet is inlined, nothing is fetched.
+    assert "<style>" in page
+    assert "http://" not in page and "https://" not in page
+
+    written = tmp_path / "bench.html"
+    written.write_text(page, encoding="utf-8")
+    assert written.stat().st_size > 10_000

@@ -38,6 +38,7 @@ class OllamaClient:
         num_predict: int = DEFAULT_NUM_PREDICT,
         timeout: float = DEFAULT_TIMEOUT,
         think: bool = False,
+        seed: int = 42,
     ) -> None:
         self.model = model
         self.host = host.rstrip("/")
@@ -47,6 +48,9 @@ class OllamaClient:
         #: Reasoning models emit their thinking instead of the answer when JSON mode is
         #: on: qwen3 returns a bare `{}`. Turning thinking off gives the answer back.
         self.think = think
+        #: Fixed per run, varied between runs, so a benchmark is reproducible and its
+        #: replicates are not identical.
+        self.seed = seed
 
     def __call__(self, prompt: str) -> Completion:
         payload = json.dumps({
@@ -59,8 +63,7 @@ class OllamaClient:
             "options": {
                 "temperature": self.temperature,
                 "num_predict": self.num_predict,
-                # Same seed every run, so a benchmark can be replayed.
-                "seed": 42,
+                "seed": self.seed,
             },
         }).encode()
         request = urllib.request.Request(

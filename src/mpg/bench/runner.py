@@ -38,7 +38,7 @@ from mpg.mercato.service import (
     squad_positions,
     validate_round,
 )
-from mpg.services.leagues import generate_fixtures
+from mpg.services.leagues import generate_code, generate_fixtures
 from mpg.services.lineups import LineupError, save_lineup
 from mpg.services.matchday import resolve_game_week
 from mpg.services.standings import as_table, standings
@@ -98,8 +98,9 @@ def build_league(
     first_game_week: int = 1, name: str = "Benchmark",
 ) -> tuple[League, dict[int, Agent]]:
     """One participant per agent. The size must be a legal league size."""
+    # The code must be unique, and several runs land inside the same second.
     league = League(
-        name=name, code=f"BENCH{int(_now().timestamp()) % 100000:05d}",
+        name=name, code=generate_code(session),
         championship_id=championship_id, size=len(agents), return_legs=True,
         status=LeagueStatus.CREATED, first_game_week=first_game_week,
     )
