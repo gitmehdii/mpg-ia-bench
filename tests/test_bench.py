@@ -294,3 +294,103 @@ def test_the_report_counts_failures_and_time():
     assert call.failure == "timeout"
     assert call.seconds == 1.5
     assert len(answer.starters) == 11, "the fallback still produced a legal team"
+
+
+# ---------------------------------------------------- short handles, long real ids
+
+def test_cards_carry_a_short_handle(ligue1):
+    """Real ids look like `mpg_championship_player_512126`; agents read `A07`."""
+    from mpg.bench.runner import build_league
+    from mpg.mercato.service import current_round, open_mercato
+
+    session = ligue1
+    league, by_participant = build_league(
+        session, [HeuristicAgent(name="a"), HeuristicAgent(name="b")]
+    )
+    open_mercato(session, league)
+    round_ = current_round(session, league.id)
+    participant = session.get(Participant, next(iter(by_participant)))
+
+    view = mercato_view(session, participant, round_)
+    assert view.free_players
+    for card in view.free_players[:20]:
+        assert card.handle, "every card needs a handle"
+        assert len(card.handle) <= 4
+        assert card.handle[0] in "GDMA"
+    # Handles are unique within a view, so resolution is never ambiguous.
+    handles = [card.handle for card in view.free_players]
+    assert len(handles) == len(set(handles))
+
+
+@pytest.mark.parametrize(
+    "given",
+    [
+        "A01",                                    # the handle
+        "a01",                                    # the handle, lower case
+        "mpg_championship_player_999",            # the real id
+        "999",                                    # the numeric tail, which models emit
+    ],
+)
+def test_a_player_can_be_named_several_ways(given):
+    from dataclasses import replace
+
+    free = (
+        replace(
+            PlayerCard("mpg_championship_player_999", "Untel", Line.A, 12),
+            handle="A01",
+        ),
+    )
+    view = MercatoView("T", 1, 5, 500, {Line.A: 4}, (), free)
+
+    kept, repair = clamp_bids(MercatoAnswer(bids=[BidDecision(given, 20)]), view)
+
+    assert len(kept) == 1, repair.problems
+    assert kept[0].player_id == "mpg_championship_player_999"
+
+
+def test_an_ambiguous_name_is_refused_rather_than_guessed():
+    """Two players whose numeric tails collide must not resolve to either."""
+    from dataclasses import replace
+
+    free = (
+        replace(PlayerCard("club_a_7", "Un", Line.A, 10), handle="A01"),
+        replace(PlayerCard("club_b_7", "Deux", Line.A, 10), handle="A02"),
+    )
+    view = MercatoView("T", 1, 5, 500, {Line.A: 4}, (), free)
+
+    kept, _repair = clamp_bids(MercatoAnswer(bids=[BidDecision("7", 20)]), view)
+
+    assert kept == [], "an ambiguous tail must not be resolved"
+    # The unambiguous handles still work.
+    kept, _ = clamp_bids(MercatoAnswer(bids=[BidDecision("A02", 20)]), view)
+    assert kept[0].player_id == "club_b_7"
+
+
+def test_a_lineup_can_be_given_in_handles(ligue1):
+    session = ligue1
+    result = run_bench(session, [HeuristicAgent(name="a"), HeuristicAgent(name="b")],
+                       game_weeks=[PLAY_WEEK])
+    participant = session.get(Participant, result.agents[0].participant_id)
+    view = lineup_view(session, participant, PLAY_WEEK)
+
+    by_line = view.by_line()
+    answer = LineupAnswer(
+        formation="4-4-2",
+        starters=[by_line[Line.G][0].handle]
+        + [c.handle for c in by_line[Line.D][:4]]
+        + [c.handle for c in by_line[Line.M][:4]]
+        + [c.handle for c in by_line[Line.A][:2]],
+        bench=[by_line[Line.G][1].handle]
+        + [c.handle for c in by_line[Line.D][4:6]]
+        + [c.handle for c in by_line[Line.M][4:6]]
+        + [c.handle for c in by_line[Line.A][2:4]],
+        captain=by_line[Line.A][0].handle,
+    )
+
+    fixed, repair = repair_lineup(answer, view)
+
+    assert repair.clean, repair.problems
+    assert len(fixed.starters) == 11
+    # Handles were resolved back to real ids the game will accept.
+    assert all(pid.startswith("mpg_") for pid in fixed.starters)
+    assert fixed.captain and fixed.captain.startswith("mpg_")

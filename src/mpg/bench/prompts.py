@@ -24,7 +24,7 @@ def _card(card: PlayerCard) -> str:
     form = f", moyenne {average:.1f}".replace(".", ",") if average is not None else ""
     goals = f", {card.past_goals} but(s)" if card.past_goals else ""
     return (
-        f"  {card.player_id} | {card.name} | {LINE_LABEL[card.line]} "
+        f"  {card.handle or card.player_id} | {card.name} | {LINE_LABEL[card.line]} "
         f"| cote {card.quotation}{form}{goals}"
     )
 
@@ -47,8 +47,11 @@ def mercato_prompt(view: MercatoView) -> str:
     ) or "aucun"
     squad = "\n".join(_card(card) for card in view.squad) or "  (effectif vide)"
     pool = "\n".join(_card(card) for card in _shortlist(view))
+    handles = {card.player_id: card.handle for card in view.free_players}
+    handles.update({card.player_id: card.handle for card in view.squad})
     already = "\n".join(
-        f"  {bid.player_id} pour {bid.amount} M€" for bid in view.own_bids
+        f"  {handles.get(bid.player_id, bid.player_id)} pour {bid.amount} M€"
+        for bid in view.own_bids
     ) or "  (aucune)"
 
     return f"""Tu diriges l'équipe « {view.team_name} » dans un jeu de fantasy football.
@@ -81,7 +84,9 @@ qui te manquent. Pour chacun, propose un montant supérieur ou égal à sa cote 
 exactement la cote risque de perdre l'enchère, surenchérir gaspille du budget.
 
 Réponds UNIQUEMENT avec cet objet JSON, sans aucun texte autour :
-{{"bids": [{{"player_id": "...", "amount": 12}}], "note": "ta stratégie en une phrase"}}"""
+{{"bids": [{{"player_id": "A07", "amount": 12}}], "note": "ta stratégie en une phrase"}}
+
+Utilise EXACTEMENT les identifiants courts de la liste (par exemple A07, D12)."""
 
 
 def lineup_prompt(view: LineupView) -> str:
@@ -124,7 +129,10 @@ Ton effectif :
 
 Réponds UNIQUEMENT avec cet objet JSON, sans aucun texte autour :
 {{"formation": "4-4-2",
-  "starters": ["id1", "...", "id11"],
-  "bench": ["id12", "...", "id18"],
-  "captain": "id_d_un_titulaire_non_gardien",
-  "note": "ton raisonnement en une phrase"}}"""
+  "starters": ["G01", "D01", "D02", "D03", "D04", "M01", "M02", "M03", "M04", "A01", "A02"],
+  "bench": ["G02", "D05", "D06", "M05", "M06", "A03", "A04"],
+  "captain": "A01",
+  "note": "ton raisonnement en une phrase"}}
+
+Utilise EXACTEMENT les identifiants courts de la liste (par exemple A07, D12).
+Le capitaine doit être un titulaire qui n'est pas le gardien."""

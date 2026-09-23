@@ -26,6 +26,10 @@ class PlayerCard:
     name: str
     line: Line
     quotation: int
+    #: A short, readable handle such as "A07". Real ids look like
+    #: `mpg_championship_player_512126`, and small models truncate them to the digits,
+    #: which turns a football benchmark into a string-copying one.
+    handle: str = ""
     club: str | None = None
     #: Ratings from earlier game weeks, oldest first. Never the one being played.
     past_ratings: tuple[float, ...] = ()

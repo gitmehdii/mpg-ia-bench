@@ -57,6 +57,28 @@ def _past_form(
     return out
 
 
+#: Letter used in a handle, per line.
+HANDLE_LETTER = {"G": "G", "D": "D", "M": "M", "A": "A"}
+
+
+def _with_handles(cards: list[PlayerCard]) -> list[PlayerCard]:
+    """Give each card a short handle such as `A07`, numbered per line.
+
+    Real ids look like `mpg_championship_player_512126`. Small models truncate those to
+    the digits and then bid on a player nobody recognises, which measures string
+    handling rather than football.
+    """
+    from dataclasses import replace
+
+    counters: dict[str, int] = {}
+    out = []
+    for card in cards:
+        letter = HANDLE_LETTER[str(card.line)]
+        counters[letter] = counters.get(letter, 0) + 1
+        out.append(replace(card, handle=f"{letter}{counters[letter]:02d}"))
+    return out
+
+
 def _cards(
     session: Session, players: list[Player], *, before_game_week: int | None = None
 ) -> list[PlayerCard]:
@@ -85,7 +107,7 @@ def _cards(
                 past_goals=goals,
             )
         )
-    return cards
+    return _with_handles(cards)
 
 
 def squad_players(session: Session, participant_id: int) -> list[Player]:

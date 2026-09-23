@@ -21,6 +21,47 @@ from mpg.engine.formations import BENCH_SIZE, STARTERS, is_legal, slots_of
 from mpg.engine.lines import Line
 
 
+def index_cards(cards) -> dict[str, str]:
+    """Every way an agent might name a player, mapped to its real id.
+
+    Small models shorten `mpg_championship_player_512126` to `512126`, so the bare
+    numeric tail resolves too. A key that would be ambiguous is dropped rather than
+    guessed at.
+    """
+    index: dict[str, str] = {}
+    clashes: set[str] = set()
+
+    def offer(key: str, player_id: str) -> None:
+        key = key.strip()
+        if not key:
+            return
+        if key in index and index[key] != player_id:
+            clashes.add(key)
+            return
+        index[key] = player_id
+
+    for card in cards:
+        offer(card.player_id, card.player_id)
+        if card.handle:
+            offer(card.handle, card.player_id)
+        tail = card.player_id.rsplit("_", 1)[-1]
+        if tail != card.player_id:
+            offer(tail, card.player_id)
+    for key in clashes:
+        index.pop(key, None)
+    return index
+
+
+def resolve_id(index: dict[str, str], given: str | None) -> str:
+    """Look a name up, forgiving the case and the surrounding whitespace."""
+    if not given:
+        return ""
+    for candidate in (given, given.strip(), given.strip().upper(), given.strip().lower()):
+        if candidate in index:
+            return index[candidate]
+    return ""
+
+
 @dataclass(slots=True)
 class Repair:
     """What had to be corrected, for the report."""
@@ -46,7 +87,9 @@ def clamp_bids(
     """
     repair = Repair()
     by_id = {card.player_id: card for card in view.free_players}
-    owned = {card.player_id for card in view.squad}
+    resolve = index_cards(view.free_players)
+    owned_resolve = index_cards(view.squad)
+    owned = set(owned_resolve)
 
     kept: list[BidDecision] = []
     seen: set[str] = set()
@@ -57,14 +100,14 @@ def clamp_bids(
         if len(kept) >= max_bids:
             repair.note(f"more than {max_bids} bids, the extras were dropped")
             break
-        card = by_id.get(bid.player_id)
+        card = by_id.get(resolve_id(resolve, bid.player_id))
         if card is None:
             if bid.player_id in owned:
                 repair.note(f"{bid.player_id} is already in the squad")
             else:
                 repair.note(f"{bid.player_id} is not a free player")
             continue
-        if bid.player_id in seen:
+        if card.player_id in seen:
             repair.note(f"{bid.player_id} bid on twice")
             continue
 
@@ -84,8 +127,8 @@ def clamp_bids(
             )
             continue
 
-        kept.append(BidDecision(bid.player_id, amount))
-        seen.add(bid.player_id)
+        kept.append(BidDecision(card.player_id, amount))
+        seen.add(card.player_id)
         committed += amount
 
     return kept, repair
@@ -97,6 +140,7 @@ def repair_lineup(
     """Make a lineup legal, keeping as much of the agent's intent as possible."""
     repair = Repair()
     squad = {card.player_id: card for card in view.squad}
+    resolve = index_cards(view.squad)
 
     formation = answer.formation if answer.formation in view.formations else None
     if formation is None:
@@ -113,10 +157,11 @@ def repair_lineup(
     # Keep the agent's picks that exist and are not duplicated, line by line.
     chosen: dict[Line, list[str]] = {line: [] for line in (Line.G, Line.D, Line.M, Line.A)}
     used: set[str] = set()
-    for player_id in answer.starters:
+    for given in answer.starters:
+        player_id = resolve_id(resolve, given) or given
         card = squad.get(player_id)
         if card is None:
-            repair.note(f"{player_id} is not in the squad")
+            repair.note(f"{given} is not in the squad")
             continue
         if player_id in used:
             repair.note(f"{player_id} picked twice")
@@ -157,7 +202,8 @@ def repair_lineup(
 
     # The bench: what the agent asked for, then filled to seven with a goalkeeper first.
     bench: list[str] = []
-    for player_id in answer.bench:
+    for given in answer.bench:
+        player_id = resolve_id(resolve, given) or given
         if player_id in squad and player_id not in used and player_id not in bench:
             bench.append(player_id)
             used.add(player_id)
@@ -181,7 +227,7 @@ def repair_lineup(
     if len(bench) != BENCH_SIZE:
         repair.note(f"{len(bench)} substitutes instead of {BENCH_SIZE}")
 
-    captain = answer.captain
+    captain = resolve_id(resolve, answer.captain) or answer.captain
     if captain is not None:
         if captain not in starters:
             repair.note("the captain is not a starter, dropped")
