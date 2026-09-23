@@ -6,6 +6,7 @@
     python -m mpg.cli replay <fixture_id> [--summary]
     python -m mpg.cli standings <league_id>
     python -m mpg.cli demo
+    python -m mpg.cli bench --models llama3.1:8b,qwen2.5:14b --game-weeks 5
     python -m mpg.cli scenarios
 """
 
@@ -124,6 +125,55 @@ def cmd_standings(args: argparse.Namespace) -> int:
         session.close()
 
 
+def cmd_bench(args: argparse.Namespace) -> int:
+    """Play a league with model-driven agents and print how they did."""
+    from sqlalchemy import create_engine
+
+    from mpg.bench.agents import HeuristicAgent, LlmAgent
+    from mpg.bench.ollama import OllamaClient, available_models
+    from mpg.bench.report import render
+    from mpg.bench.runner import run_bench
+    from mpg.db.models import Base
+
+    models = [m.strip() for m in args.models.split(",") if m.strip()]
+    if models:
+        known = available_models(args.host)
+        if not known:
+            print(f"aucun serveur Ollama sur {args.host}", file=sys.stderr)
+            return 1
+        missing = [m for m in models if m not in known]
+        if missing:
+            print(f"modèles absents : {', '.join(missing)}", file=sys.stderr)
+            print(f"disponibles : {', '.join(known)}", file=sys.stderr)
+            return 1
+
+    agents = [
+        LlmAgent(name=model, complete=OllamaClient(model, host=args.host,
+                                                   timeout=args.timeout))
+        for model in models
+    ]
+    if args.baseline or len(agents) % 2:
+        agents.append(HeuristicAgent(name="heuristique"))
+    if len(agents) % 2:
+        agents.append(HeuristicAgent(name="heuristique-2", premium=0.3))
+
+    engine = create_engine(get_settings().database_url, future=True)
+    Base.metadata.create_all(engine)
+    session = get_session_factory()()
+    try:
+        weeks = [int(w) for w in args.game_weeks.split(",") if w.strip()]
+        result = run_bench(
+            session, agents, game_weeks=weeks, mercato_rounds=args.rounds,
+            name=args.name,
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    print(render(result))
+    return 0
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     """Seed a browsable league and print how to reach it."""
     from sqlalchemy import create_engine
@@ -200,6 +250,18 @@ def build_parser() -> argparse.ArgumentParser:
     table = sub.add_parser("standings", help="print a league table")
     table.add_argument("league_id", type=int)
     table.set_defaults(func=cmd_standings)
+
+    bench = sub.add_parser("bench", help="play a league with model-driven agents")
+    bench.add_argument("--models", default="",
+                       help="comma-separated Ollama models, e.g. llama3.1:8b,qwen2.5:14b")
+    bench.add_argument("--game-weeks", default="5", help="comma-separated game weeks")
+    bench.add_argument("--rounds", type=int, default=5, help="mercato rounds")
+    bench.add_argument("--host", default="http://localhost:11434")
+    bench.add_argument("--timeout", type=float, default=300.0)
+    bench.add_argument("--baseline", action="store_true",
+                       help="add the heuristic agent as a control")
+    bench.add_argument("--name", default="Benchmark")
+    bench.set_defaults(func=cmd_bench)
 
     demo = sub.add_parser("demo", help="seed a browsable demo league")
     demo.add_argument("--base-url", default="http://localhost:8000")
