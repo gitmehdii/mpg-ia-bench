@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from mpg.config import get_settings
 from mpg.db.models import League, LeagueMatch
@@ -196,8 +197,10 @@ def cmd_bench(args: argparse.Namespace) -> int:
             )
             for model in models
         ]
-        if args.baseline or len(built) % 2:
+        if args.baseline or len(built) % 2 or not built:
             built.append(HeuristicAgent(name="heuristique"))
+        # A league needs an even number of participants, and with no model at all the
+        # run is still worth having: it exercises the whole pipeline with no server.
         if len(built) % 2:
             built.append(HeuristicAgent(name="heuristique-2", premium=0.30))
         return built
@@ -227,12 +230,25 @@ def cmd_bench(args: argparse.Namespace) -> int:
                 print(render(run))
             result = multi.runs[-1]
         else:
+            from mpg.bench.aggregate import MultiRunResult, collect
+
             result = run_bench(
                 session, agents, game_weeks=weeks, mercato_rounds=args.rounds,
                 name=args.name,
             )
             session.commit()
             print(render(result))
+            multi = MultiRunResult(
+                aggregates=collect([result]), runs=[result], game_weeks=weeks
+            )
+
+        if args.html:
+            from mpg.bench.html_report import render_html
+
+            Path(args.html).write_text(
+                render_html(session, multi, title=args.name), encoding="utf-8"
+            )
+            print(f"  Rapport HTML : {args.html}")
     finally:
         session.close()
     session = get_session_factory()()
@@ -356,6 +372,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--think", action="store_true",
                        help="let reasoning models think; they return an empty object "
                             "in JSON mode when they do")
+    bench.add_argument("--html", default="",
+                       help="write a self-contained HTML report to this path")
     bench.add_argument("--show-lineups", action="store_true",
                        help="print every team at the end of the run")
     bench.set_defaults(func=cmd_bench)
