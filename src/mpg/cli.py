@@ -6,6 +6,7 @@
     python -m mpg.cli replay <fixture_id> [--summary]
     python -m mpg.cli standings <league_id>
     python -m mpg.cli lineups <league_id> <game_week>
+    python -m mpg.cli recap <league_id> <game_week>
     python -m mpg.cli demo
     python -m mpg.cli bench --models llama3.1:8b,qwen2.5:14b --game-weeks 5
     python -m mpg.cli scenarios
@@ -126,6 +127,21 @@ def cmd_standings(args: argparse.Namespace) -> int:
         session.close()
 
 
+def cmd_recap(args: argparse.Namespace) -> int:
+    """Print the side-by-side recap of a game week."""
+    from mpg.services.recap import recap_game_week
+
+    session = get_session_factory()()
+    try:
+        if session.get(League, args.league_id) is None:
+            print("no such league", file=sys.stderr)
+            return 1
+        print(recap_game_week(session, args.league_id, args.game_week))
+        return 0
+    finally:
+        session.close()
+
+
 def cmd_lineups(args: argparse.Namespace) -> int:
     """Print every manager's team for a game week, next to what the players did."""
     from mpg.bench.lineups_text import render_lineups
@@ -165,8 +181,12 @@ def cmd_bench(args: argparse.Namespace) -> int:
             return 1
 
     agents = [
-        LlmAgent(name=model, complete=OllamaClient(model, host=args.host,
-                                                   timeout=args.timeout))
+        LlmAgent(
+            name=model,
+            complete=OllamaClient(
+                model, host=args.host, timeout=args.timeout, think=args.think
+            ),
+        )
         for model in models
     ]
     if args.baseline or len(agents) % 2:
@@ -188,14 +208,19 @@ def cmd_bench(args: argparse.Namespace) -> int:
         session.close()
 
     print(render(result))
-    if args.show_lineups:
-        from mpg.bench.lineups_text import render_lineups
+    session = get_session_factory()()
+    try:
+        from mpg.services.recap import recap_game_week
 
-        session = get_session_factory()()
-        try:
+        for week in weeks:
+            print(recap_game_week(session, result.league_id, week))
+            print()
+        if args.show_lineups:
+            from mpg.bench.lineups_text import render_lineups
+
             print(render_lineups(session, result.league_id, weeks[-1]))
-        finally:
-            session.close()
+    finally:
+        session.close()
     print(f"  Compos détaillées : mpg lineups {result.league_id} {weeks[-1]}")
     print()
     return 0
@@ -278,6 +303,11 @@ def build_parser() -> argparse.ArgumentParser:
     table.add_argument("league_id", type=int)
     table.set_defaults(func=cmd_standings)
 
+    recap = sub.add_parser("recap", help="print the side-by-side recap of a game week")
+    recap.add_argument("league_id", type=int)
+    recap.add_argument("game_week", type=int)
+    recap.set_defaults(func=cmd_recap)
+
     lineups = sub.add_parser("lineups", help="print every team of a game week")
     lineups.add_argument("league_id", type=int)
     lineups.add_argument("game_week", type=int)
@@ -293,6 +323,9 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--baseline", action="store_true",
                        help="add the heuristic agent as a control")
     bench.add_argument("--name", default="Benchmark")
+    bench.add_argument("--think", action="store_true",
+                       help="let reasoning models think; they return an empty object "
+                            "in JSON mode when they do")
     bench.add_argument("--show-lineups", action="store_true",
                        help="print every team at the end of the run")
     bench.set_defaults(func=cmd_bench)

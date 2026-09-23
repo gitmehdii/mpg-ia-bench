@@ -425,3 +425,67 @@ def test_the_lineups_view_survives_a_missing_lineup(ligue1):
     )
     text = render_lineups(session, league.id, PLAY_WEEK)
     assert "aucune composition" in text
+
+
+def test_form_is_confined_to_its_own_season(ligue1):
+    """A database holding two seasons must not read game week 4 of one as game week 4
+    of the other."""
+    from mpg.bench.views import known_game_weeks
+    from mpg.db.models import Match
+
+    session = ligue1
+    # A game week 3 belonging to an earlier season, which must stay invisible.
+    session.add(Match(id="old", championship_id=1, season=2025, game_week_number=3, status=1))
+    session.flush()
+    player = session.execute(select(Performance)).scalars().first().player_id
+    session.add(Performance(
+        player_id=player, match_id="old", game_week_number=3, season=2025,
+        rating=9.5, goals_scored=3,
+    ))
+    session.flush()
+
+    assert known_game_weeks(session, PLAY_WEEK, season=2026) == 1      # only week 4
+    assert known_game_weeks(session, PLAY_WEEK, season=2025) == 1      # only week 3
+    assert known_game_weeks(session, PLAY_WEEK) == 2                   # unfiltered
+
+    participant_holder = run_bench(
+        session, [HeuristicAgent(name="a"), HeuristicAgent(name="b")],
+        game_weeks=[PLAY_WEEK],
+    )
+    participant = session.get(Participant, participant_holder.agents[0].participant_id)
+    view = lineup_view(session, participant, PLAY_WEEK, season=2026)
+    for card in view.squad:
+        assert 9.5 not in card.past_ratings, "a rating from another season leaked in"
+
+
+def test_cards_report_availability(ligue1):
+    session = ligue1
+    result = run_bench(session, [HeuristicAgent(name="a"), HeuristicAgent(name="b")],
+                       game_weeks=[PLAY_WEEK])
+    participant = session.get(Participant, result.agents[0].participant_id)
+
+    view = lineup_view(session, participant, PLAY_WEEK, season=2026)
+
+    assert all(card.weeks_known == 1 for card in view.squad), "week 4 is the only record"
+    played = [card for card in view.squad if card.appearances]
+    assert played, "someone in the squad played the previous week"
+    for card in played:
+        assert card.availability == 1.0
+    absent = [card for card in view.squad if not card.appearances]
+    for card in absent:
+        assert card.availability == 0.0
+
+
+def test_availability_is_never_read_from_the_season_totals(ligue1):
+    """The API's totals run to the end of the season; using them would be foresight."""
+    session = ligue1
+    participant_holder = run_bench(
+        session, [HeuristicAgent(name="a"), HeuristicAgent(name="b")],
+        game_weeks=[PLAY_WEEK],
+    )
+    participant = session.get(Participant, participant_holder.agents[0].participant_id)
+    view = lineup_view(session, participant, PLAY_WEEK, season=2026)
+
+    for card in view.squad:
+        # Only one week is on record before week 5, so nothing can claim more.
+        assert card.appearances <= card.weeks_known == 1

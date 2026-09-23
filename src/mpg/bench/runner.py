@@ -21,6 +21,7 @@ from mpg.bench.views import lineup_view, mercato_view
 from mpg.config import MERCATO_BASE_ROUNDS
 from mpg.db.models import (
     BonusUsage,
+    Championship,
     League,
     LeagueMatch,
     LeagueStatus,
@@ -131,6 +132,8 @@ def run_mercato(
     reports: dict[int, AgentReport],
     *,
     rounds: int = MERCATO_BASE_ROUNDS,
+    before_game_week: int | None = None,
+    season: int | None = None,
 ) -> None:
     """The closed-bid mercato, round by round, exactly as a human would play it."""
     open_mercato(session, league)
@@ -146,7 +149,10 @@ def run_mercato(
             participant = session.get(Participant, participant_id)
             if participant.mercato_closed or participant.budget <= 0:
                 continue
-            view = mercato_view(session, participant, round_)
+            view = mercato_view(
+                session, participant, round_,
+                before_game_week=before_game_week, season=season,
+            )
             if view.missing == 0:
                 validate_round(session, participant, round_)
                 continue
@@ -183,6 +189,7 @@ def run_game_week(
     agents: dict[int, Agent],
     reports: dict[int, AgentReport],
     game_week: int,
+    season: int | None = None,
 ) -> None:
     """Every agent picks a team, then the fixtures of that week are resolved."""
     fixtures = session.execute(
@@ -201,7 +208,8 @@ def run_game_week(
         opponent = session.get(Participant, opponent_id) if opponent_id else None
 
         view = lineup_view(
-            session, participant, game_week, opponent=opponent, at_home=at_home
+            session, participant, game_week, opponent=opponent, at_home=at_home,
+            season=season,
         )
         answer, call = agent.pick(view)
         reports[participant_id].calls.append(call)
@@ -257,13 +265,18 @@ def run_bench(
         for participant_id, agent in by_participant.items()
     }
 
-    run_mercato(session, league, by_participant, reports, rounds=mercato_rounds)
+    championship = session.get(Championship, championship_id)
+    season = championship.current_season if championship else None
+    run_mercato(
+        session, league, by_participant, reports, rounds=mercato_rounds,
+        before_game_week=game_weeks[0], season=season,
+    )
     generate_fixtures(session, league)
     session.flush()
 
     played = []
     for game_week in game_weeks:
-        run_game_week(session, league, by_participant, reports, game_week)
+        run_game_week(session, league, by_participant, reports, game_week, season=season)
         played.append(game_week)
 
     table = as_table(standings(session, league))

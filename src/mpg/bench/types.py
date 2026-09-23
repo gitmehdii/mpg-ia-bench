@@ -34,10 +34,27 @@ class PlayerCard:
     #: Ratings from earlier game weeks, oldest first. Never the one being played.
     past_ratings: tuple[float, ...] = ()
     past_goals: int = 0
+    #: Game weeks this player was rated in, out of the ones on record before this one.
+    #: Counted from ingested results only, so it carries no knowledge of the future --
+    #: the API's season totals would, since they run to the end of the season.
+    appearances: int = 0
+    weeks_known: int = 0
 
     @property
     def average_rating(self) -> float | None:
         return sum(self.past_ratings) / len(self.past_ratings) if self.past_ratings else None
+
+    @property
+    def availability(self) -> float | None:
+        """Share of the known game weeks this player was actually rated in.
+
+        The single most useful thing a manager can know that a quotation does not say:
+        a starter who did not play is replaced by the bench, and failing that by a
+        phantom rated 2.5.
+        """
+        if not self.weeks_known:
+            return None
+        return self.appearances / self.weeks_known
 
 
 @dataclass(frozen=True, slots=True)

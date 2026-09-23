@@ -37,12 +37,16 @@ class OllamaClient:
         temperature: float = 0.0,
         num_predict: int = DEFAULT_NUM_PREDICT,
         timeout: float = DEFAULT_TIMEOUT,
+        think: bool = False,
     ) -> None:
         self.model = model
         self.host = host.rstrip("/")
         self.temperature = temperature
         self.num_predict = num_predict
         self.timeout = timeout
+        #: Reasoning models emit their thinking instead of the answer when JSON mode is
+        #: on: qwen3 returns a bare `{}`. Turning thinking off gives the answer back.
+        self.think = think
 
     def __call__(self, prompt: str) -> Completion:
         payload = json.dumps({
@@ -51,6 +55,7 @@ class OllamaClient:
             "stream": False,
             # Ollama's JSON mode; it does not guarantee a parse, only biases towards one.
             "format": "json",
+            "think": self.think,
             "options": {
                 "temperature": self.temperature,
                 "num_predict": self.num_predict,

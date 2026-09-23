@@ -23,9 +23,14 @@ def _card(card: PlayerCard) -> str:
     average = card.average_rating
     form = f", moyenne {average:.1f}".replace(".", ",") if average is not None else ""
     goals = f", {card.past_goals} but(s)" if card.past_goals else ""
+    played = (
+        f", joué {card.appearances}/{card.weeks_known} journées"
+        if card.weeks_known
+        else ""
+    )
     return (
         f"  {card.handle or card.player_id} | {card.name} | {LINE_LABEL[card.line]} "
-        f"| cote {card.quotation}{form}{goals}"
+        f"| cote {card.quotation}{form}{goals}{played}"
     )
 
 
@@ -65,6 +70,9 @@ Les règles qui comptent :
 - Il te faut au total 2 gardiens, 6 défenseurs, 6 milieux et 4 attaquants.
 - Un joueur non remporté ne coûte rien : une enchère perdue ne débite rien.
 - Garde de quoi compléter ton effectif lors des tours suivants.
+- « joué X/Y journées » dit à quelle fréquence le joueur entre en jeu. Un joueur cher
+  qui ne joue jamais ne rapporte rien : un titulaire absent est remplacé par le banc,
+  et s'il ne reste personne à son poste, par un joueur fantôme noté 2,5.
 
 Ton budget : {view.budget} M€
 Postes qu'il te manque : {deficit}
@@ -118,6 +126,9 @@ Comment les points se marquent :
 - Un gardien ne marque jamais de but MPG.
 - Un titulaire qui n'a pas joué est remplacé par le banc ; s'il ne reste personne à son
   poste, un joueur fantôme noté 2,5 le remplace, ce qui est très coûteux.
+- « joué X/Y journées » dit à quelle fréquence le joueur entre en jeu. Aligner un joueur
+  qui ne joue presque jamais est le moyen le plus sûr de perdre des points, et le
+  capitanat posé sur un absent est perdu.
 
 Tu dois aligner 11 titulaires et 7 remplaçants, dont AU MOINS UN GARDIEN sur le banc.
 Formations possibles : {formations}

@@ -21,6 +21,7 @@ from mpg.bench.types import (
     LineupView,
     MercatoAnswer,
     MercatoView,
+    PlayerCard,
 )
 from mpg.bench.validation import clamp_bids, repair_lineup
 from mpg.engine.lines import Line
@@ -67,7 +68,14 @@ class HeuristicAgent:
                 card for card in view.free_players
                 if card.line is line and card.player_id not in taken
             ]
-            candidates.sort(key=lambda c: (-c.quotation, c.player_id))
+            # Prefer a player who actually turns out, at equal quotation.
+            candidates.sort(
+                key=lambda c: (
+                    -round(c.availability if c.availability is not None else 0.0, 1),
+                    -c.quotation,
+                    c.player_id,
+                )
+            )
             reserve = max(0, view.missing - len(chosen) - 1)
             ceiling = min(envelope - spent, view.budget - spent - reserve)
             affordable = [c for c in candidates if c.quotation <= ceiling]
@@ -88,9 +96,19 @@ class HeuristicAgent:
         answer = LineupAnswer(formation="4-4-2", note="meilleures notes moyennes")
         by_line = view.by_line()
 
+        def rank(card: PlayerCard) -> tuple:
+            # Availability first: a starter who does not play costs more than a
+            # mediocre one who does.
+            return (
+                -(card.availability if card.availability is not None else 0.0),
+                -(card.average_rating or 0),
+                -card.quotation,
+                card.player_id,
+            )
+
         def best(line: Line, count: int, skip: set[str]) -> list[str]:
             cards = [c for c in by_line.get(line, []) if c.player_id not in skip]
-            cards.sort(key=lambda c: (-(c.average_rating or 0), -c.quotation, c.player_id))
+            cards.sort(key=rank)
             return [c.player_id for c in cards[:count]]
 
         used: set[str] = set()
@@ -113,7 +131,13 @@ class HeuristicAgent:
         # by the rules, and the bonus is wasted on a player who is unlikely to shine.
         rated = {card.player_id: card for card in view.squad}
         outfield = [pid for pid in starters if rated[pid].line is not Line.G]
-        outfield.sort(key=lambda pid: (-(rated[pid].average_rating or 0), pid))
+        outfield.sort(
+            key=lambda pid: (
+                -(rated[pid].availability if rated[pid].availability is not None else 0.0),
+                -(rated[pid].average_rating or 0),
+                pid,
+            )
+        )
         answer.captain = outfield[0] if outfield else None
         return answer, AgentCall("lineup", self.name)
 
