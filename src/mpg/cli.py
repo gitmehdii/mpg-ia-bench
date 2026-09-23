@@ -5,6 +5,7 @@
     python -m mpg.cli resolve-week <league_id> <game_week> [--summary]
     python -m mpg.cli replay <fixture_id> [--summary]
     python -m mpg.cli standings <league_id>
+    python -m mpg.cli lineups <league_id> <game_week>
     python -m mpg.cli demo
     python -m mpg.cli bench --models llama3.1:8b,qwen2.5:14b --game-weeks 5
     python -m mpg.cli scenarios
@@ -125,6 +126,22 @@ def cmd_standings(args: argparse.Namespace) -> int:
         session.close()
 
 
+def cmd_lineups(args: argparse.Namespace) -> int:
+    """Print every manager's team for a game week, next to what the players did."""
+    from mpg.bench.lineups_text import render_lineups
+
+    session = get_session_factory()()
+    try:
+        league = session.get(League, args.league_id)
+        if league is None:
+            print("no such league", file=sys.stderr)
+            return 1
+        print(render_lineups(session, args.league_id, args.game_week))
+        return 0
+    finally:
+        session.close()
+
+
 def cmd_bench(args: argparse.Namespace) -> int:
     """Play a league with model-driven agents and print how they did."""
     from sqlalchemy import create_engine
@@ -171,6 +188,16 @@ def cmd_bench(args: argparse.Namespace) -> int:
         session.close()
 
     print(render(result))
+    if args.show_lineups:
+        from mpg.bench.lineups_text import render_lineups
+
+        session = get_session_factory()()
+        try:
+            print(render_lineups(session, result.league_id, weeks[-1]))
+        finally:
+            session.close()
+    print(f"  Compos détaillées : mpg lineups {result.league_id} {weeks[-1]}")
+    print()
     return 0
 
 
@@ -251,6 +278,11 @@ def build_parser() -> argparse.ArgumentParser:
     table.add_argument("league_id", type=int)
     table.set_defaults(func=cmd_standings)
 
+    lineups = sub.add_parser("lineups", help="print every team of a game week")
+    lineups.add_argument("league_id", type=int)
+    lineups.add_argument("game_week", type=int)
+    lineups.set_defaults(func=cmd_lineups)
+
     bench = sub.add_parser("bench", help="play a league with model-driven agents")
     bench.add_argument("--models", default="",
                        help="comma-separated Ollama models, e.g. llama3.1:8b,qwen2.5:14b")
@@ -261,6 +293,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--baseline", action="store_true",
                        help="add the heuristic agent as a control")
     bench.add_argument("--name", default="Benchmark")
+    bench.add_argument("--show-lineups", action="store_true",
+                       help="print every team at the end of the run")
     bench.set_defaults(func=cmd_bench)
 
     demo = sub.add_parser("demo", help="seed a browsable demo league")

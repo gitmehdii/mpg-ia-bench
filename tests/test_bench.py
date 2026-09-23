@@ -394,3 +394,34 @@ def test_a_lineup_can_be_given_in_handles(ligue1):
     # Handles were resolved back to real ids the game will accept.
     assert all(pid.startswith("mpg_") for pid in fixed.starters)
     assert fixed.captain and fixed.captain.startswith("mpg_")
+
+
+def test_the_lineups_view_reads_back_what_was_submitted(ligue1):
+    from mpg.bench.lineups_text import render_lineups
+
+    session = ligue1
+    result = run_bench(session, [HeuristicAgent(name="alpha"), HeuristicAgent(name="beta")],
+                       game_weeks=[PLAY_WEEK])
+
+    text = render_lineups(session, result.league_id, PLAY_WEEK)
+
+    assert "alpha" in text and "beta" in text
+    assert "TITULAIRES" in text and "BANC" in text
+    assert text.count("TITULAIRES") == 2
+    # The captain the agent chose is marked.
+    assert "(C)" in text
+    # Form is shown from earlier weeks, and the played week is shown separately.
+    assert "forme" in text
+    assert f"J{PLAY_WEEK}" in text
+
+
+def test_the_lineups_view_survives_a_missing_lineup(ligue1):
+    from mpg.bench.lineups_text import render_lineups
+    from mpg.bench.runner import build_league
+
+    session = ligue1
+    league, _agents = build_league(
+        session, [HeuristicAgent(name="a"), HeuristicAgent(name="b")]
+    )
+    text = render_lineups(session, league.id, PLAY_WEEK)
+    assert "aucune composition" in text
