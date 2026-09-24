@@ -66,8 +66,21 @@ def squad_positions(session: Session, participant_id: int) -> list[int]:
     )
 
 
-def free_players(session: Session, league: League, owned: set[str]) -> list[FreePlayer]:
-    """Unowned players of the league's championship, with their current quotation."""
+def free_players(
+    session: Session,
+    league: League,
+    owned: set[str],
+    eligible: set[str] | None = None,
+) -> list[FreePlayer]:
+    """Unowned players of the league's championship, with their current quotation.
+
+    `eligible` narrows the universe to a given set of players. A benchmark replaying
+    past game weeks uses it: the public API serves only a window of results, so most
+    of the pool has no rating on the weeks being played, and a squad drawn from it
+    would be made almost entirely of players the engine reads as absent. Restricting
+    the universe to players the data actually covers is a property of the replay, not
+    of the game, which is why it lives here as an argument rather than a rule.
+    """
     rows = session.execute(
         select(Player.id, Player.ultra_position, Player.quotation, Player.last_name).where(
             Player.championship_id == league.championship_id,
@@ -78,7 +91,7 @@ def free_players(session: Session, league: League, owned: set[str]) -> list[Free
     return [
         FreePlayer(pid, line_of(ultra), quotation, name)
         for pid, ultra, quotation, name in rows
-        if pid not in owned
+        if pid not in owned and (eligible is None or pid in eligible)
     ]
 
 
@@ -253,7 +266,9 @@ def current_round(session: Session, league_id: int) -> MercatoRound | None:
     ).scalars().first()
 
 
-def resolve_round(session: Session, round_id: int) -> bool:
+def resolve_round(
+    session: Session, round_id: int, eligible: set[str] | None = None
+) -> bool:
     """Resolve one round. Returns False when there was nothing to do.
 
     Idempotent: a cron that fires again on an already-resolved round exits at once.
@@ -282,7 +297,7 @@ def resolve_round(session: Session, round_id: int) -> bool:
             select(RoundValidation.participant_id).where(RoundValidation.round_id == round_.id)
         ).scalars()
     )
-    pool = free_players(session, league, owned)
+    pool = free_players(session, league, owned, eligible)
     for participant in participants:
         if participant.id in validated:
             continue
@@ -388,7 +403,7 @@ def resolve_round(session: Session, round_id: int) -> bool:
     session.flush()
 
     if mercato_should_close(session, league, round_):
-        close_mercato(session, league)
+        close_mercato(session, league, eligible)
     else:
         create_next_round(session, league, round_)
     session.flush()
@@ -437,7 +452,9 @@ def mercato_should_close(session: Session, league: League, round_: MercatoRound)
 # ------------------------------------------------------------------------- draft
 
 
-def draft_missing_players(session: Session, league: League) -> list[Roster]:
+def draft_missing_players(
+    session: Session, league: League, eligible: set[str] | None = None
+) -> list[Roster]:
     """Spec 4.4.5: top every short squad up with the cheapest free players.
 
     A squad that cannot field a lineup is never an acceptable outcome of a mercato, so
@@ -451,7 +468,7 @@ def draft_missing_players(session: Session, league: League) -> list[Roster]:
     )
     for participant in participants:
         owned = owned_player_ids(session, league.id)
-        pool = free_players(session, league, owned)
+        pool = free_players(session, league, owned, eligible)
         by_line: dict[Line, list[FreePlayer]] = {}
         for player in pool:
             by_line.setdefault(player.line, []).append(player)
@@ -510,9 +527,11 @@ def draft_missing_players(session: Session, league: League) -> list[Roster]:
     return added
 
 
-def close_mercato(session: Session, league: League) -> None:
+def close_mercato(
+    session: Session, league: League, eligible: set[str] | None = None
+) -> None:
     """Close the mercato: top up the short squads, then the league can start."""
-    draft_missing_players(session, league)
+    draft_missing_players(session, league, eligible)
     league.status = LeagueStatus.RUNNING
     league.mercato_closed_at = _now()
     for participant in league.participants:

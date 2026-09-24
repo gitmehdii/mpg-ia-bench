@@ -590,3 +590,99 @@ def test_the_html_report_holds_the_mercato_and_every_fixture(ligue1, tmp_path):
     written = tmp_path / "bench.html"
     written.write_text(page, encoding="utf-8")
     assert written.stat().st_size > 10_000
+
+
+# ------------------------------------------- the pool a replay can honestly draw from
+
+def test_the_universe_is_the_players_the_data_covers(ligue1):
+    """The public API serves a window of results, so most of the pool has no rating on
+    a given week. Those are missing data, not absences, and the engine cannot tell the
+    difference: it reads no rating as "did not play" and fields a phantom."""
+    from mpg.bench.views import players_with_results
+    from mpg.db.models import Player
+
+    session = ligue1
+    eligible = players_with_results(session, [PLAY_WEEK], season=2026)
+    everyone = session.execute(select(Player)).scalars().all()
+
+    assert eligible, "some players must have results on the week being played"
+    assert len(eligible) < len(everyone), "the window never covers the whole pool"
+    for player_id in eligible:
+        assert session.execute(
+            select(Performance).where(
+                Performance.player_id == player_id,
+                Performance.game_week_number == PLAY_WEEK,
+                Performance.rating.is_not(None),
+            )
+        ).first() is not None
+
+
+def test_restricting_the_pool_cuts_the_phantoms_down(ligue1):
+    """The measurement that justifies the restriction."""
+    from mpg.db.models import LeagueMatch
+
+    session = ligue1
+
+    def phantom_rate(restrict: bool) -> float:
+        agents = [HeuristicAgent(name=f"h{i}", premium=0.1 * i) for i in range(1, 5)]
+        result = run_bench(
+            session, agents, game_weeks=[PLAY_WEEK], restrict_pool=restrict,
+            name=f"restrict={restrict}",
+        )
+        session.flush()
+        total = phantoms = 0
+        for fixture in session.execute(
+            select(LeagueMatch).where(
+                LeagueMatch.league_id == result.league_id,
+                LeagueMatch.report.is_not(None),
+            )
+        ).scalars():
+            for side in ("home", "away"):
+                for slot in fixture.report[side]["final_xi"]:
+                    total += 1
+                    phantoms += bool(slot["is_rotaldo"])
+        return phantoms / total
+
+    whole = phantom_rate(False)
+    covered = phantom_rate(True)
+
+    assert covered < whole, (
+        f"restricting the pool must reduce the phantoms: {covered:.0%} vs {whole:.0%}"
+    )
+
+
+def test_a_restricted_run_only_buys_players_the_data_covers(ligue1):
+    from mpg.bench.views import players_with_results
+
+    session = ligue1
+    result = run_bench(
+        session, [HeuristicAgent(name="a"), HeuristicAgent(name="b")],
+        game_weeks=[PLAY_WEEK], restrict_pool=True,
+    )
+    eligible = players_with_results(session, [PLAY_WEEK], season=2026)
+
+    for report in result.agents:
+        owned = session.execute(
+            select(Roster).where(Roster.participant_id == report.participant_id)
+        ).scalars().all()
+        assert owned
+        outside = [row.player_id for row in owned if row.player_id not in eligible]
+        assert not outside, f"bought outside the universe: {outside[:3]}"
+        # The draft obeys it too, which is where most of the phantoms came from.
+        assert all(row.player_id in eligible for row in owned if row.from_draft)
+
+
+def test_the_whole_pool_is_still_reachable(ligue1):
+    """The restriction is a property of a replay, not a rule of the game."""
+    from mpg.bench.views import players_with_results
+
+    session = ligue1
+    run_bench(
+        session, [HeuristicAgent(name="a"), HeuristicAgent(name="b")],
+        game_weeks=[PLAY_WEEK], restrict_pool=False,
+    )
+    eligible = players_with_results(session, [PLAY_WEEK], season=2026)
+    owned = session.execute(select(Roster)).scalars().all()
+    assert any(row.player_id not in eligible for row in owned), (
+        "without the restriction a squad may hold players the data does not cover"
+    )

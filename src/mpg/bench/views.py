@@ -137,6 +137,27 @@ def _cards(
     return _with_handles(cards)
 
 
+def players_with_results(
+    session: Session, game_weeks: list[int], season: int | None = None
+) -> set[str]:
+    """Players the data actually covers on the weeks being replayed.
+
+    The public API serves only a window of results: on the three weeks of a past
+    season it returns a rating for roughly a fifth of the pool, where a real game week
+    covers about forty percent. The rest are missing *data*, not real absences, and the
+    engine cannot tell the two apart -- it reads no rating as "did not play" and fields
+    a phantom. Restricting the benchmark's universe to the covered players is what keeps
+    a run from measuring the size of the gap in the API rather than the managers.
+    """
+    query = select(Performance.player_id).where(
+        Performance.game_week_number.in_(game_weeks),
+        Performance.rating.is_not(None),
+    )
+    if season is not None:
+        query = query.where(Performance.season == season)
+    return set(session.execute(query.distinct()).scalars())
+
+
 def squad_players(session: Session, participant_id: int) -> list[Player]:
     return list(
         session.execute(
@@ -155,13 +176,14 @@ def mercato_view(
     pool_limit: int = 400,
     before_game_week: int | None = None,
     season: int | None = None,
+    eligible: set[str] | None = None,
 ) -> MercatoView:
     """What this participant may know before bidding. Nothing about anyone else."""
     league = session.get(League, participant.league_id)
     squad = squad_players(session, participant.id)
 
     owned = owned_player_ids(session, league.id)
-    free = free_players(session, league, owned)
+    free = free_players(session, league, owned, eligible)
     free.sort(key=lambda p: (-p.quotation, p.player_id))
     free = free[:pool_limit]
     free_rows = {

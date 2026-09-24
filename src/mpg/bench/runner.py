@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from mpg.bench.agents import Agent
 from mpg.bench.types import AgentCall
-from mpg.bench.views import lineup_view, mercato_view
+from mpg.bench.views import lineup_view, mercato_view, players_with_results
 from mpg.config import MERCATO_BASE_ROUNDS
 from mpg.db.models import (
     BonusUsage,
@@ -135,6 +135,7 @@ def run_mercato(
     rounds: int = MERCATO_BASE_ROUNDS,
     before_game_week: int | None = None,
     season: int | None = None,
+    eligible: set[str] | None = None,
 ) -> None:
     """The closed-bid mercato, round by round, exactly as a human would play it."""
     open_mercato(session, league)
@@ -152,7 +153,7 @@ def run_mercato(
                 continue
             view = mercato_view(
                 session, participant, round_,
-                before_game_week=before_game_week, season=season,
+                before_game_week=before_game_week, season=season, eligible=eligible,
             )
             if view.missing == 0:
                 validate_round(session, participant, round_)
@@ -168,14 +169,14 @@ def run_mercato(
                     call.failure = f"{call.failure + ' | ' if call.failure else ''}{error}"
             validate_round(session, participant, round_)
 
-        resolve_round(session, round_.id)
+        resolve_round(session, round_.id, eligible)
         session.flush()
 
     league = session.get(League, league.id)
     if league.status is LeagueStatus.MERCATO:
         # The draft tops up whatever the agents failed to buy, so no run ends with a
         # squad that cannot be fielded.
-        close_mercato(session, league)
+        close_mercato(session, league, eligible)
         session.flush()
 
     for participant_id, report in reports.items():
@@ -251,6 +252,7 @@ def run_bench(
     championship_id: int = 1,
     mercato_rounds: int = MERCATO_BASE_ROUNDS,
     name: str = "Benchmark",
+    restrict_pool: bool = True,
 ) -> BenchResult:
     """A whole run: league, mercato, then one lineup and one set of fixtures per week."""
     league, by_participant = build_league(
@@ -268,9 +270,12 @@ def run_bench(
 
     championship = session.get(Championship, championship_id)
     season = championship.current_season if championship else None
+    eligible = (
+        players_with_results(session, game_weeks, season) if restrict_pool else None
+    )
     run_mercato(
         session, league, by_participant, reports, rounds=mercato_rounds,
-        before_game_week=game_weeks[0], season=season,
+        before_game_week=game_weeks[0], season=season, eligible=eligible,
     )
     generate_fixtures(session, league)
     session.flush()

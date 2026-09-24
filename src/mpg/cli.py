@@ -222,7 +222,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
             multi = run_many(
                 None, make_agents, game_weeks=weeks, runs=args.runs,
                 session=session, mercato_rounds=args.rounds, name=args.name,
-                on_run=announce,
+                on_run=announce, restrict_pool=not args.whole_pool,
             )
             session.commit()
             print(render_aggregate(multi))
@@ -234,7 +234,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
 
             result = run_bench(
                 session, agents, game_weeks=weeks, mercato_rounds=args.rounds,
-                name=args.name,
+                name=args.name, restrict_pool=not args.whole_pool,
             )
             session.commit()
             print(render(result))
@@ -372,6 +372,9 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--think", action="store_true",
                        help="let reasoning models think; they return an empty object "
                             "in JSON mode when they do")
+    bench.add_argument("--whole-pool", action="store_true",
+                       help="do not restrict the pool to players the data covers; "
+                            "most of a squad then reads as absent")
     bench.add_argument("--html", default="",
                        help="write a self-contained HTML report to this path")
     bench.add_argument("--show-lineups", action="store_true",

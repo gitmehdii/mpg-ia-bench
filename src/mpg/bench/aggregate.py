@@ -117,6 +117,7 @@ def run_many(
     championship_id: int = 1,
     mercato_rounds: int = MERCATO_BASE_ROUNDS,
     name: str = "Benchmark",
+    restrict_pool: bool = True,
     on_run: Callable[[int, BenchResult], None] | None = None,
 ) -> MultiRunResult:
     """Play the same benchmark `runs` times.
@@ -151,7 +152,7 @@ def run_many(
             result = run_bench(
                 active, agents, game_weeks=game_weeks,
                 championship_id=championship_id, mercato_rounds=mercato_rounds,
-                name=f"{name} #{index + 1}",
+                name=f"{name} #{index + 1}", restrict_pool=restrict_pool,
             )
             active.flush()
         results.append(result)
